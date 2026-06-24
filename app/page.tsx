@@ -1,72 +1,115 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../utils/supabase';
+
+// Mocking the Supabase client so the Canvas preview can compile.
+// When pasting into your local VS Code, delete this mock object 
+// and uncomment the import line below:
+// import { supabase } from '../utils/supabase';
+
+const supabase = {
+  auth: {
+    getSession: async () => ({ data: { session: null } }),
+    onAuthStateChange: (cb: any) => ({ data: { subscription: { unsubscribe: () => {} } } }),
+    signUp: async ({ email, password }: any) => ({ error: null }),
+    signInWithPassword: async ({ email, password }: any) => ({ error: null }),
+    signOut: async () => ({ error: null })
+  },
+  from: (table: string) => ({
+    insert: (data: any) => ({
+      select: async () => ({ data: [{ name: 'Prajjwal Singh' }], error: null })
+    })
+  })
+};
 
 export default function Home() {
-  const [dbStatus, setDbStatus] = useState("Waiting for database...");
+  // --- Auth State ---
+  const [user, setUser] = useState<any>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authMessage, setAuthMessage] = useState('');
+
+  // --- AWS & AI State ---
   const [awsStatus, setAwsStatus] = useState("Waiting for swipe...");
   const [aiDecision, setAiDecision] = useState("");
-  
-  // Dynamic inputs state
   const [merchantInput, setMerchantInput] = useState("Uber Ride");
   const [amountInput, setAmountInput] = useState("25.50");
-
-  // New state for Audit Logs
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
-  // Fetch logs as soon as the page loads
+  // --- Initialize: Check User Session & Fetch Logs ---
   useEffect(() => {
+    // 1. Check if user is already logged in
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    // 2. Listen for login/logout events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    // 3. Fetch audit logs for the dashboard
     fetchAuditLogs();
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  // --- GET Request: Fetch Logs ---
+  // --- Supabase Authentication Handlers ---
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthMessage("");
+    
+    if (isSignUp) {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) setAuthMessage(`Error: ${error.message}`);
+      else setAuthMessage("Success! You can now log in.");
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) setAuthMessage(`Error: ${error.message}`);
+      else setAuthMessage("Successfully logged in!");
+    }
+    setAuthLoading(false);
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setAuthMessage("Logged out securely.");
+  };
+
+  // --- AWS Lambda (Fetch Logs) ---
   const fetchAuditLogs = async () => {
     const lambdaUrl = process.env.NEXT_PUBLIC_AWS_LAMBDA_URL;
     if (!lambdaUrl) return;
     
     try {
-      // A standard fetch defaults to a GET request
       const response = await fetch(lambdaUrl); 
       const data = await response.json();
-      if (Array.isArray(data)) {
-        setAuditLogs(data);
-      }
+      if (Array.isArray(data)) setAuditLogs(data);
     } catch (error) {
       console.error("Failed to fetch logs:", error);
     }
   };
 
-  // --- 1. Supabase Database Test ---
-  const testDatabaseConnection = async () => {
-    setDbStatus("Connecting to Supabase...");
-    const { data, error } = await supabase
-      .from('users')
-      .insert([{ name: 'Prajjwal Singh', email: `prajjwal+${Date.now()}@smartwallet.com`, role: 'admin' }])
-      .select();
-
-    if (error) setDbStatus(`DB Error: ${error.message}`);
-    else setDbStatus(`DB Success: User ${data[0].name} added!`);
-  };
-
-  // --- 2. AWS Lambda & Bedrock Test (POST Request) ---
+  // --- AWS Lambda (Process Swipe) ---
   const simulateCardSwipe = async () => {
+    if (!user) {
+      setAwsStatus("Access Denied: Please log in first.");
+      return;
+    }
+
     setAwsStatus("Analyzing transaction via AWS Bedrock...");
     setAiDecision("");
     
     const lambdaUrl = process.env.NEXT_PUBLIC_AWS_LAMBDA_URL;
-    
-    if (!lambdaUrl) {
-      setAwsStatus("Error: AWS URL not found in .env.local");
-      return;
-    }
+    if (!lambdaUrl) return;
 
     try {
       const response = await fetch(lambdaUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           merchant: merchantInput,
           amount: parseFloat(amountInput) || 0
@@ -74,20 +117,15 @@ export default function Home() {
       });
 
       const data = await response.json();
-      console.log("AWS AI Response:", data);
       
       if (data && data.decision) {
         setAwsStatus(`Success! Merchant: ${data.merchantAnalyzed} ($${data.amountProcessed})`);
         setAiDecision(`AI Engine: ${data.decision}`);
-        
-        // Refresh the ledger to show the new transaction immediately!
-        fetchAuditLogs(); 
+        fetchAuditLogs(); // Refresh ledger
       } else {
         setAwsStatus(`Received anomaly: ${JSON.stringify(data).substring(0, 60)}...`);
       }
-      
     } catch (error: any) {
-      console.error("AWS Network Error:", error);
       setAwsStatus(`Network Error: ${error.message}`);
     }
   };
@@ -101,51 +139,105 @@ export default function Home() {
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-5xl">
         
-        {/* Supabase Panel */}
+        {/* --- 1. Supabase Auth Panel --- */}
         <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl flex flex-col items-center">
-          <h3 className="text-2xl font-bold mb-2">Relational Data</h3>
-          <p className="text-sm text-gray-400 mb-6">PostgreSQL via Supabase</p>
-          <button 
-            onClick={testDatabaseConnection}
-            className="px-6 py-3 w-full bg-blue-600 hover:bg-blue-500 rounded-lg font-bold transition-all active:scale-95 mb-4"
-          >
-            1. Test Database Insert
-          </button>
-          <p className="text-sm font-mono text-emerald-400 text-center h-12 flex items-center justify-center">
-            {dbStatus}
+          <h3 className="text-2xl font-bold mb-2">Identity Provider</h3>
+          <p className="text-sm text-gray-400 mb-6">Authentication via Supabase Auth</p>
+          
+          {user ? (
+            <div className="w-full flex flex-col items-center bg-gray-900 p-6 rounded border border-emerald-900/50">
+              <div className="h-16 w-16 bg-emerald-900/50 rounded-full flex items-center justify-center mb-4 border border-emerald-500">
+                <span className="text-2xl">👤</span>
+              </div>
+              <p className="text-emerald-400 font-bold mb-1">Authenticated Employee</p>
+              <p className="text-gray-400 text-sm mb-6">{user.email}</p>
+              <button 
+                onClick={handleSignOut}
+                className="px-6 py-2 w-full bg-gray-700 hover:bg-gray-600 rounded font-bold transition-all active:scale-95 text-sm"
+              >
+                Sign Out
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleAuth} className="w-full">
+              <div className="mb-4">
+                <label className="block text-xs text-gray-400 mb-1">Corporate Email</label>
+                <input 
+                  type="email" 
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div className="mb-6">
+                <label className="block text-xs text-gray-400 mb-1">Password</label>
+                <input 
+                  type="password" 
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <button 
+                type="submit"
+                disabled={authLoading}
+                className="px-6 py-3 w-full bg-blue-600 hover:bg-blue-500 rounded-lg font-bold transition-all active:scale-95 mb-4 disabled:opacity-50"
+              >
+                {authLoading ? "Processing..." : (isSignUp ? "Create Account" : "Secure Login")}
+              </button>
+              <p className="text-xs text-center text-gray-400 cursor-pointer hover:text-blue-400" onClick={() => setIsSignUp(!isSignUp)}>
+                {isSignUp ? "Already have an account? Sign In" : "Need access? Create Account"}
+              </p>
+            </form>
+          )}
+
+          <p className={`text-sm font-mono mt-4 text-center h-6 ${authMessage.includes('Error') ? 'text-red-400' : 'text-emerald-400'}`}>
+            {authMessage}
           </p>
         </div>
 
-        {/* AWS Lambda + Bedrock Panel */}
-        <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl flex flex-col items-center text-center">
+        {/* --- 2. AWS Lambda + Bedrock Panel --- */}
+        <div className={`bg-gray-800 p-8 rounded-xl border ${user ? 'border-orange-900/50' : 'border-gray-700 opacity-75'} shadow-2xl flex flex-col items-center text-center transition-all`}>
           <h3 className="text-2xl font-bold mb-2">AI Logic Engine</h3>
           <p className="text-sm text-gray-400 mb-6">Serverless Compute + AWS Bedrock</p>
           
+          {!user && (
+            <div className="absolute mt-24 bg-gray-900/90 p-4 rounded border border-gray-600 backdrop-blur-sm z-10">
+              <p className="text-red-400 font-bold text-sm">🔒 AUTHENTICATION REQUIRED</p>
+              <p className="text-xs text-gray-400 mt-1">Please log in to use the AI engine.</p>
+            </div>
+          )}
+
           {/* Dynamic Inputs */}
           <div className="flex gap-4 w-full mb-4">
             <div className="flex-1">
               <label className="block text-xs text-gray-400 mb-1 text-left">Merchant Name</label>
               <input 
                 type="text" 
+                disabled={!user}
                 value={merchantInput}
                 onChange={(e) => setMerchantInput(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-orange-500"
+                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-orange-500 disabled:opacity-50"
               />
             </div>
             <div className="w-1/3">
               <label className="block text-xs text-gray-400 mb-1 text-left">Amount ($)</label>
               <input 
                 type="number" 
+                disabled={!user}
                 value={amountInput}
                 onChange={(e) => setAmountInput(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-orange-500"
+                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-orange-500 disabled:opacity-50"
               />
             </div>
           </div>
 
           <button 
             onClick={simulateCardSwipe}
-            className="px-6 py-3 w-full bg-orange-600 hover:bg-orange-500 rounded-lg font-bold transition-all active:scale-95 mb-4"
+            disabled={!user}
+            className="px-6 py-3 w-full bg-orange-600 hover:bg-orange-500 rounded-lg font-bold transition-all active:scale-95 mb-4 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             2. Swipe Corporate Card
           </button>
