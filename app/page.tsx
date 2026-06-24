@@ -1,26 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-
-// Mocking the Supabase client so the Canvas preview can compile.
-// When pasting into your local VS Code, delete this mock object 
-// and uncomment the import line below:
-// import { supabase } from '../utils/supabase';
-
-const supabase = {
-  auth: {
-    getSession: async () => ({ data: { session: null } }),
-    onAuthStateChange: (cb: any) => ({ data: { subscription: { unsubscribe: () => {} } } }),
-    signUp: async ({ email, password }: any) => ({ error: null }),
-    signInWithPassword: async ({ email, password }: any) => ({ error: null }),
-    signOut: async () => ({ error: null })
-  },
-  from: (table: string) => ({
-    insert: (data: any) => ({
-      select: async () => ({ data: [{ name: 'Prajjwal Singh' }], error: null })
-    })
-  })
-};
+import { supabase } from '../utils/supabase';
 
 export default function Home() {
   // --- Auth State ---
