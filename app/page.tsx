@@ -7,8 +7,12 @@ export default function Home() {
   const [dbStatus, setDbStatus] = useState("Waiting for database...");
   const [awsStatus, setAwsStatus] = useState("Waiting for swipe...");
   const [aiDecision, setAiDecision] = useState("");
+  
+  // New state variables for dynamic inputs
+  const [merchantInput, setMerchantInput] = useState("Uber Ride");
+  const [amountInput, setAmountInput] = useState("25.50");
 
-  // --- 1. Supabase Database Test (Completed) ---
+  // --- 1. Supabase Database Test ---
   const testDatabaseConnection = async () => {
     setDbStatus("Connecting to Supabase...");
     const { data, error } = await supabase
@@ -20,7 +24,7 @@ export default function Home() {
     else setDbStatus(`DB Success: User ${data[0].name} added!`);
   };
 
-  // --- 2. AWS Lambda & Bedrock Test (Updated for AI) ---
+  // --- 2. AWS Lambda & Bedrock Test (Dynamic) ---
   const simulateCardSwipe = async () => {
     setAwsStatus("Analyzing transaction via AWS Bedrock...");
     setAiDecision("");
@@ -39,8 +43,8 @@ export default function Home() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          merchant: "Exotic Sports Car Rentals",
-          amount: 450.00
+          merchant: merchantInput,
+          amount: parseFloat(amountInput) || 0
         })
       });
 
@@ -48,7 +52,7 @@ export default function Home() {
       console.log("AWS AI Response:", data);
       
       if (data && data.decision) {
-        setAwsStatus(`Success! Merchant: ${data.merchantAnalyzed}`);
+        setAwsStatus(`Success! Merchant: ${data.merchantAnalyzed} ($${data.amountProcessed})`);
         setAiDecision(`AI Engine: ${data.decision}`);
       } else {
         setAwsStatus(`Received anomaly: ${JSON.stringify(data).substring(0, 60)}...`);
@@ -88,11 +92,34 @@ export default function Home() {
         <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl flex flex-col items-center text-center">
           <h3 className="text-2xl font-bold mb-2">AI Logic Engine</h3>
           <p className="text-sm text-gray-400 mb-6">Serverless Compute + AWS Bedrock</p>
+          
+          {/* Dynamic Inputs */}
+          <div className="flex gap-4 w-full mb-4">
+            <div className="flex-1">
+              <label className="block text-xs text-gray-400 mb-1 text-left">Merchant Name</label>
+              <input 
+                type="text" 
+                value={merchantInput}
+                onChange={(e) => setMerchantInput(e.target.value)}
+                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-orange-500"
+              />
+            </div>
+            <div className="w-1/3">
+              <label className="block text-xs text-gray-400 mb-1 text-left">Amount ($)</label>
+              <input 
+                type="number" 
+                value={amountInput}
+                onChange={(e) => setAmountInput(e.target.value)}
+                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-orange-500"
+              />
+            </div>
+          </div>
+
           <button 
             onClick={simulateCardSwipe}
             className="px-6 py-3 w-full bg-orange-600 hover:bg-orange-500 rounded-lg font-bold transition-all active:scale-95 mb-4"
           >
-            2. Swipe Corporate Card ($450)
+            2. Swipe Corporate Card
           </button>
           
           <div className="flex flex-col h-24 items-center justify-center w-full px-2">
@@ -100,7 +127,11 @@ export default function Home() {
               {awsStatus}
             </p>
             {aiDecision && (
-              <p className={`mt-2 p-3 w-full rounded text-sm font-bold shadow-inner ${aiDecision.includes('DECLINED') ? 'bg-red-900/50 text-red-400 border border-red-800' : 'bg-green-900/50 text-green-400 border border-green-800'}`}>
+              <p className={`mt-2 p-3 w-full rounded text-sm font-bold shadow-inner ${
+                aiDecision.includes('DECLINED') || aiDecision.includes('ERROR') 
+                  ? 'bg-red-900/50 text-red-400 border border-red-800' 
+                  : 'bg-green-900/50 text-green-400 border border-green-800'
+              }`}>
                 {aiDecision}
               </p>
             )}
