@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+SmartWallet AI: Enterprise Financial Compliance Engine
 
-## Getting Started
+SmartWallet AI is an event-driven, serverless cloud application that automatically evaluates corporate card transactions against company policy using Generative AI.
 
-First, run the development server:
+🏗️ System Architecture
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+This project demonstrates a modern, decoupled cloud architecture utilizing Polyglot Persistence and Serverless Computing.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Frontend (Edge): Next.js hosted on Vercel for low-latency, globally distributed UI delivery.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Authentication & Relational Data: Supabase (PostgreSQL) handles secure user identity and structured employee data.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Compute Engine: AWS Lambda acts as the serverless routing brain, scaling instantly from zero to thousands of concurrent executions.
 
-## Learn More
+AI Logic Engine: AWS Bedrock (Amazon Nova Micro) processes natural language rule evaluations via strict prompt engineering and low-temperature inference.
 
-To learn more about Next.js, take a look at the following resources:
+Immutable Audit Ledger: AWS DynamoDB (NoSQL) captures high-throughput transaction logs in real-time, completely decoupled from the relational database.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+✨ Key Technical Achievements
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Polyglot Persistence: Successfully separated database workloads. Relational data (users/auth) stays in PostgreSQL, while high-velocity, schema-less audit logs are streamed to DynamoDB.
 
-## Deploy on Vercel
+Enterprise Cloud Security: Implemented strict IAM (Identity and Access Management) policies, adhering to the Principle of Least Privilege for Lambda-to-Bedrock/DynamoDB communications.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Graceful Error Handling & Resiliency: The application safely catches cloud-level errors (e.g., AWS ThrottlingException account quotas) and handles CORS API gateway restrictions without crashing the client UI.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+CI/CD Pipeline: Integrated a continuous deployment pipeline via GitHub and Vercel for zero-downtime production updates.
+
+🚀 How It Works
+
+An authenticated user simulates a corporate card swipe via the Next.js dashboard.
+
+An API request is securely routed to the AWS Lambda function.
+
+Lambda constructs a strict context window and queries AWS Bedrock to evaluate the merchant and amount against corporate policy.
+
+The AI decision is instantly written to the DynamoDB NoSQL ledger.
+
+The frontend automatically fetches the updated ledger via a GET request to Lambda, reflecting the immutable log in real-time.
+
+💻 Local Development
+
+Clone the repository
+
+Install dependencies: npm install
+
+Configure environment variables in .env.local:
+
+NEXT_PUBLIC_SUPABASE_URL
+
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+NEXT_PUBLIC_AWS_LAMBDA_URL
+
+Run the development server: npm run dev
