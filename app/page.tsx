@@ -1,448 +1,272 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { supabase } from '../utils/supabase'; // Make sure this path is correct for your project!
+import { useState, useEffect } from "react";
+import { supabase } from "../lib/supabaseClient";
 
 export default function Home() {
-  // --- Auth State ---
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [user, setUser] = useState<any>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
-  const [isForgotPassword, setIsForgotPassword] = useState(false); // Forgot Password State
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authMessage, setAuthMessage] = useState('');
+  const [isForgotPassword, setIsForgotPassword] = useState(false); // New state for Forgot Password
+  const [message, setMessage] = useState("");
 
-  // --- AWS & AI State ---
-  const [awsStatus, setAwsStatus] = useState("Waiting for swipe...");
-  const [aiDecision, setAiDecision] = useState("");
-  const [merchantInput, setMerchantInput] = useState("Uber Ride");
-  const [amountInput, setAmountInput] = useState("25.50");
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [merchant, setMerchant] = useState("");
+  const [amount, setAmount] = useState("");
+  const [swipeStatus, setSwipeStatus] = useState("");
+  const [logs, setLogs] = useState<any[]>([]);
 
-  // --- Admin Analytics State ---
-  const [filterEmail, setFilterEmail] = useState("ALL");
+  const AWS_API_URL = process.env.NEXT_PUBLIC_AWS_API_URL || "";
 
-  // --- Initialize: Check User Session & Fetch Logs ---
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: any) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      if (currentUser) fetchAuditLogs(currentUser);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      if (currentUser) fetchAuditLogs(currentUser);
-    });
-
-    fetchAuditLogs();
-
-    return () => {
-      if (subscription && subscription.unsubscribe) {
-        subscription.unsubscribe();
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user || null);
+      if (session?.user) {
+        fetchLogs();
       }
     };
+    checkUser();
   }, []);
 
-  // --- Supabase Authentication Handlers ---
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    setAuthLoading(true);
-    setAuthMessage("");
-    
-    if (isSignUp) {
-      // ENTERPRISE SECURITY: Programmatic Role Assignment (No UI Dropdown)
-      const assignedRole = email.toLowerCase().includes('admin') ? 'admin' : 'employee';
+    setMessage("");
 
-      const { error } = await supabase.auth.signUp({ 
-        email, 
-        password,
-        options: { data: { role: assignedRole } }
+    if (isForgotPassword) {
+      // Forgot Password Logic
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin,
       });
-      if (error) setAuthMessage(`Error: ${error.message}`);
-      else setAuthMessage("Success! You can now log in.");
-    } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setAuthMessage(`Error: ${error.message}`);
-      else setAuthMessage("Successfully logged in!");
-    }
-    setAuthLoading(false);
-  };
-
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthLoading(true);
-    setAuthMessage("");
-    
-    // Sends a secure recovery email via Supabase
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin, // Redirects back to app
-    });
-    
-    if (error) setAuthMessage(`Error: ${error.message}`);
-    else setAuthMessage("Password reset link sent to your email!");
-    setAuthLoading(false);
-  };
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    setAuthMessage("Logged out securely.");
-    setAuditLogs([]); // Clear logs on sign out
-  };
-
-  // --- AWS Lambda (Fetch Logs) ---
-  const fetchAuditLogs = async (activeUser?: any) => {
-    const targetUser = activeUser || user;
-    if (!targetUser) return;
-
-    const lambdaUrl = process.env.NEXT_PUBLIC_AWS_LAMBDA_URL;
-    if (!lambdaUrl) return;
-    
-    const role = targetUser.user_metadata?.role || 'employee';
-    const userEmail = targetUser.email;
-    
-    try {
-      // Passes role & email for Tenant Data Isolation on backend
-      const response = await fetch(`${lambdaUrl}?role=${role}&email=${encodeURIComponent(userEmail)}`); 
-      const data = await response.json();
-      if (Array.isArray(data)) setAuditLogs(data);
-    } catch (error) {
-      console.error("Failed to fetch logs:", error);
-    }
-  };
-
-  // --- AWS Lambda (Process Swipe) ---
-  const simulateCardSwipe = async () => {
-    if (!user) {
-      setAwsStatus("Access Denied: Please log in first.");
+      if (error) setMessage(`Error: ${error.message}`);
+      else setMessage("Success! Check your email for a password reset link.");
       return;
     }
 
-    setAwsStatus("Analyzing transaction via AWS Bedrock...");
-    setAiDecision("");
-    
-    const lambdaUrl = process.env.NEXT_PUBLIC_AWS_LAMBDA_URL;
-    if (!lambdaUrl) return;
-
-    try {
-      const response = await fetch(lambdaUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          merchant: merchantInput,
-          amount: parseFloat(amountInput) || 0,
-          email: user.email // Send email to tag the transaction
-        })
-      });
-
-      const data = await response.json();
-      
-      if (data && data.decision) {
-        setAwsStatus(`Success! Merchant: ${data.merchantAnalyzed} ($${data.amountProcessed})`);
-        setAiDecision(`AI Engine: ${data.decision}`);
-        fetchAuditLogs(); // Refresh ledger instantly
-      } else {
-        setAwsStatus(`Received anomaly: ${JSON.stringify(data).substring(0, 60)}...`);
+    if (isSignUp) {
+      // Sign Up Logic
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) setMessage(`Error: ${error.message}`);
+      else setMessage("Success! You can now log in.");
+    } else {
+      // Login Logic
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) setMessage(`Error: ${error.message}`);
+      else {
+        setUser(data.user);
+        setMessage("Successfully logged in!");
+        fetchLogs();
       }
-    } catch (error: any) {
-      setAwsStatus(`Network Error: ${error.message}`);
     }
   };
 
-  // --- Threat Analytics Engine (For Admins) ---
-  const uniqueEmails = Array.from(new Set(auditLogs.map(log => log.email))).filter(Boolean) as string[];
-  
-  const userStats = auditLogs.reduce((acc: any, log) => {
-    if (!log.email) return acc;
-    if (!acc[log.email]) acc[log.email] = { totalSpend: 0, declines: 0 };
-    
-    if (log.aiDecision?.includes('APPROVED')) {
-      acc[log.email].totalSpend += parseFloat(log.amount || 0);
-    }
-    // Count both literal DECLINED and AWS Throttling ERRORs as strikes
-    if (log.aiDecision?.includes('DECLINED') || log.aiDecision?.includes('ERROR')) {
-      acc[log.email].declines += 1;
-    }
-    return acc;
-  }, {});
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setLogs([]);
+    setMessage("");
+  };
 
-  const totalApprovedSpend = Object.values(userStats).reduce((sum: any, stat: any) => sum + stat.totalSpend, 0) as number;
-  
-  // Flag users with 2 or more declined/error transactions
-  const flaggedUsers = Object.entries(userStats)
-    .filter(([_, stats]: any) => stats.declines >= 2)
-    .map(([email]) => email);
-    
-  // Apply Dropdown Filter
-  const filteredLogs = filterEmail === "ALL" ? auditLogs : auditLogs.filter(log => log.email === filterEmail);
+  const fetchLogs = async () => {
+    try {
+      const res = await fetch(AWS_API_URL);
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data = await res.json();
+      setLogs(data);
+    } catch (err: any) {
+      console.error(err);
+      setMessage(`Network Error: ${err.message}`);
+    }
+  };
 
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-start bg-gray-900 text-white p-8 md:p-12">
-      <h1 className="text-5xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 pt-8">
-        SmartWallet AI
-      </h1>
-      <h2 className="text-xl text-gray-400 mb-12 font-mono">System Architecture Dashboard</h2>
+  const handleSwipe = async () => {
+    setSwipeStatus("Processing AI logic...");
+    try {
+      const res = await fetch(AWS_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          merchant,
+          amount: parseFloat(amount),
+          email: user?.email,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to process transaction");
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-5xl">
-        
-        {/* --- 1. Supabase Auth Panel --- */}
-        <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl flex flex-col items-center">
-          <h3 className="text-2xl font-bold mb-2">Identity Provider</h3>
-          <p className="text-sm text-gray-400 mb-6">Authentication via Supabase Auth</p>
+      const data = await res.json();
+      setSwipeStatus(`Success! Result: ${data.aiDecision}`);
+      fetchLogs(); 
+      setMerchant("");
+      setAmount("");
+    } catch (err: any) {
+      setSwipeStatus(`Error: ${err.message}`);
+    }
+  };
+
+  // Threat Analytics Logic
+  const getHighRiskUsers = () => {
+    const declines = logs.filter((log) => 
+      log.aiDecision?.includes("DECLINED") || log.aiDecision?.includes("ERROR")
+    );
+    const userStrikes: Record<string, number> = {};
+    declines.forEach((log) => {
+      userStrikes[log.email] = (userStrikes[log.email] || 0) + 1;
+    });
+    return Object.keys(userStrikes).filter((email) => userStrikes[email] >= 2);
+  };
+  const highRiskUsers = getHighRiskUsers();
+  const isAdmin = user?.email?.includes("admin");
+
+  // RENDER AUTHENTICATION SCREEN
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-8">
+        <h1 className="text-4xl font-bold mb-8 text-blue-400">SmartWallet AI</h1>
+        <div className="bg-slate-800 p-8 rounded-xl shadow-2xl w-full max-w-md border border-slate-700">
+          <h2 className="text-2xl font-semibold mb-6">
+            {isForgotPassword ? "Reset Password" : isSignUp ? "Create Account" : "Sign In"}
+          </h2>
           
-          {user ? (
-            <div className="w-full flex flex-col items-center bg-gray-900 p-6 rounded border border-emerald-900/50">
-              <div className="h-16 w-16 bg-emerald-900/50 rounded-full flex items-center justify-center mb-4 border border-emerald-500">
-                <span className="text-2xl">👤</span>
-              </div>
-              <p className="text-emerald-400 font-bold mb-1">Authenticated User</p>
-              <p className="text-gray-400 text-sm mb-3">{user.email}</p>
-              
-              <span className={`px-3 py-1 rounded-full text-xs font-bold mb-6 ${user.user_metadata?.role === 'admin' ? 'bg-purple-900/50 text-purple-400 border border-purple-500' : 'bg-blue-900/50 text-blue-400 border border-blue-500'}`}>
-                Role: {user.user_metadata?.role?.toUpperCase() || 'EMPLOYEE'}
-              </span>
-
-              <button onClick={handleSignOut} className="px-6 py-2 w-full bg-gray-700 hover:bg-gray-600 rounded font-bold transition-all active:scale-95 text-sm">
-                Sign Out
-              </button>
-            </div>
-          ) : isForgotPassword ? (
-            /* --- FORGOT PASSWORD FORM --- */
-            <form onSubmit={handleResetPassword} className="w-full">
-              <div className="mb-6">
-                <label className="block text-xs text-gray-400 mb-1">Corporate Email</label>
-                <input 
-                  type="email" 
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <button 
-                type="submit"
-                disabled={authLoading}
-                className="px-6 py-3 w-full bg-purple-600 hover:bg-purple-500 rounded-lg font-bold transition-all active:scale-95 mb-4 disabled:opacity-50"
-              >
-                {authLoading ? "Processing..." : "Send Reset Link"}
-              </button>
-              <p className="text-xs text-center text-gray-400 cursor-pointer hover:text-purple-400" onClick={() => setIsForgotPassword(false)}>
-                Back to Secure Login
-              </p>
-            </form>
-          ) : (
-            /* --- LOGIN / SIGNUP FORM --- */
-            <form onSubmit={handleAuth} className="w-full">
-              <div className="mb-4">
-                <label className="block text-xs text-gray-400 mb-1">Corporate Email</label>
-                <input 
-                  type="email" 
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500"
-                />
-              </div>
-              <div className="mb-6">
-                <label className="block text-xs text-gray-400 mb-1">Password</label>
-                <input 
-                  type="password" 
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <button 
-                type="submit"
-                disabled={authLoading}
-                className="px-6 py-3 w-full bg-blue-600 hover:bg-blue-500 rounded-lg font-bold transition-all active:scale-95 mb-4 disabled:opacity-50"
-              >
-                {authLoading ? "Processing..." : (isSignUp ? "Create Account" : "Secure Login")}
-              </button>
-              
-              <div className="flex flex-col gap-3 mt-2">
-                <p className="text-xs text-center text-gray-400 cursor-pointer hover:text-blue-400" onClick={() => setIsSignUp(!isSignUp)}>
-                  {isSignUp ? "Already have an account? Sign In" : "Need access? Create Account"}
-                </p>
-                {!isSignUp && (
-                  <p className="text-xs text-center text-gray-500 cursor-pointer hover:text-purple-400 transition-colors" onClick={() => setIsForgotPassword(true)}>
-                    Forgot Password?
-                  </p>
-                )}
-              </div>
-            </form>
-          )}
-
-          <p className={`text-sm font-mono mt-4 text-center h-6 ${authMessage.includes('Error') ? 'text-red-400' : 'text-emerald-400'}`}>
-            {authMessage}
-          </p>
-        </div>
-
-        {/* --- 2. AWS Lambda + Bedrock Panel --- */}
-        <div className={`bg-gray-800 p-8 rounded-xl border ${user ? 'border-orange-900/50' : 'border-gray-700 opacity-75'} shadow-2xl flex flex-col items-center text-center transition-all`}>
-          <h3 className="text-2xl font-bold mb-2">AI Logic Engine</h3>
-          <p className="text-sm text-gray-400 mb-6">Serverless Compute + AWS Bedrock</p>
-          
-          {!user && (
-            <div className="absolute mt-24 bg-gray-900/90 p-4 rounded border border-gray-600 backdrop-blur-sm z-10">
-              <p className="text-red-400 font-bold text-sm">🔒 AUTHENTICATION REQUIRED</p>
-              <p className="text-xs text-gray-400 mt-1">Please log in to use the AI engine.</p>
-            </div>
-          )}
-
-          {/* Dynamic Inputs */}
-          <div className="flex gap-4 w-full mb-4">
-            <div className="flex-1">
-              <label className="block text-xs text-gray-400 mb-1 text-left">Merchant Name</label>
-              <input 
-                type="text" 
-                disabled={!user}
-                value={merchantInput}
-                onChange={(e) => setMerchantInput(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-orange-500 disabled:opacity-50"
+          <form onSubmit={handleAuth} className="space-y-4">
+            <input
+              type="email"
+              placeholder="Corporate Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full p-3 rounded bg-slate-900 border border-slate-600 focus:border-blue-500 outline-none"
+              required
+            />
+            
+            {!isForgotPassword && (
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full p-3 rounded bg-slate-900 border border-slate-600 focus:border-blue-500 outline-none"
+                required
               />
-            </div>
-            <div className="w-1/3">
-              <label className="block text-xs text-gray-400 mb-1 text-left">Amount ($)</label>
-              <input 
-                type="number" 
-                disabled={!user}
-                value={amountInput}
-                onChange={(e) => setAmountInput(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-orange-500 disabled:opacity-50"
-              />
-            </div>
-          </div>
+            )}
 
-          <button 
-            onClick={simulateCardSwipe}
-            disabled={!user}
-            className="px-6 py-3 w-full bg-orange-600 hover:bg-orange-500 rounded-lg font-bold transition-all active:scale-95 mb-4 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            2. Swipe Corporate Card
-          </button>
-          
-          <div className="flex flex-col h-24 items-center justify-center w-full px-2">
-            <p className="text-sm font-mono text-emerald-400 break-words max-w-full">
-              {awsStatus}
-            </p>
-            {aiDecision && (
-              <p className={`mt-2 p-3 w-full rounded text-sm font-bold shadow-inner ${
-                aiDecision.includes('DECLINED') || aiDecision.includes('ERROR') 
-                  ? 'bg-red-900/50 text-red-400 border border-red-800' 
-                  : 'bg-green-900/50 text-green-400 border border-green-800'
-              }`}>
-                {aiDecision}
-              </p>
+            <button type="submit" className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded font-bold transition-colors">
+              {isForgotPassword ? "Send Reset Link" : isSignUp ? "Sign Up" : "Log In"}
+            </button>
+          </form>
+
+          {message && <p className="mt-4 text-center text-emerald-400">{message}</p>}
+
+          <div className="mt-6 flex flex-col items-center space-y-2 text-sm text-slate-400">
+            {isForgotPassword ? (
+              <button onClick={() => setIsForgotPassword(false)} className="hover:text-blue-400">
+                Back to Login
+              </button>
+            ) : (
+              <>
+                <button onClick={() => setIsSignUp(!isSignUp)} className="hover:text-blue-400">
+                  {isSignUp ? "Already have an account? Log in" : "Need an account? Sign up"}
+                </button>
+                <button onClick={() => setIsForgotPassword(true)} className="hover:text-blue-400">
+                  Forgot Password?
+                </button>
+              </>
             )}
           </div>
         </div>
       </div>
+    );
+  }
 
-      {/* --- 3. Live Audit Ledger & Analytics Panel --- */}
-      {user && (
-        <div className="w-full max-w-5xl mt-8">
-          
-          {/* ADMIN ANALYTICS DASHBOARD */}
-          {user.user_metadata?.role === 'admin' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-lg">
-                <h4 className="text-xs text-gray-400 mb-1">Company Approved Spend</h4>
-                <p className="text-2xl font-bold text-emerald-400">${totalApprovedSpend.toFixed(2)}</p>
-              </div>
-              <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-lg">
-                <h4 className="text-xs text-gray-400 mb-1">High-Risk Users (2+ Declines)</h4>
-                <p className={`text-2xl font-bold ${flaggedUsers.length > 0 ? 'text-red-400' : 'text-gray-300'}`}>
-                  {flaggedUsers.length} Users
-                </p>
-              </div>
-              <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-lg flex flex-col justify-center">
-                <label className="block text-xs text-gray-400 mb-1">Filter by Employee</label>
-                <select 
-                  value={filterEmail}
-                  onChange={(e) => setFilterEmail(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500 text-sm"
-                >
-                  <option value="ALL">All Employees</option>
-                  {uniqueEmails.map(em => (
-                    <option key={em} value={em}>{em}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
+  // RENDER DASHBOARD (When Logged In)
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-200 p-8">
+      <div className="max-w-6xl mx-auto space-y-8">
+        <h1 className="text-4xl font-bold text-center text-blue-400 mb-12">System Architecture Dashboard</h1>
 
-          {/* LEDGER TABLE */}
-          <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl mb-12">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h3 className="text-2xl font-bold">
-                  {user.user_metadata?.role === 'admin' ? 'Company-Wide Audit Ledger' : 'Your Transaction History'}
-                </h3>
-                <p className="text-sm text-gray-400">Live NoSQL feed via AWS DynamoDB</p>
-              </div>
-              <button 
-                onClick={() => fetchAuditLogs()}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold transition-all active:scale-95"
-              >
-                ↻ Refresh
-              </button>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-gray-900 text-gray-400">
-                  <tr>
-                    <th className="p-3 rounded-tl-lg">Timestamp</th>
-                    <th className="p-3">Employee</th>
-                    <th className="p-3">Merchant</th>
-                    <th className="p-3">Amount</th>
-                    <th className="p-3 rounded-tr-lg">AI Decision</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredLogs.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="p-4 text-center text-gray-500">No transactions found.</td>
-                    </tr>
-                  ) : (
-                    filteredLogs.map((log, index) => {
-                      const isFlagged = flaggedUsers.includes(log.email);
-                      return (
-                        <tr key={index} className="border-b border-gray-700 hover:bg-gray-750">
-                          <td className="p-3 text-gray-400 font-mono text-xs">
-                            {new Date(log.timestamp).toLocaleString()}
-                          </td>
-                          <td className="p-3 font-semibold">
-                            <span className={isFlagged ? 'text-red-400 font-bold flex items-center gap-1' : 'text-blue-400'}>
-                              {isFlagged && '⚠️ '} {log.email || "Unknown"}
-                            </span>
-                          </td>
-                          <td className="p-3 font-semibold">{log.merchant}</td>
-                          <td className="p-3 font-mono">${parseFloat(log.amount).toFixed(2)}</td>
-                          <td className="p-3">
-                            <span className={`px-2 py-1 rounded text-xs font-bold ${
-                              log.aiDecision?.includes('APPROVED') ? 'bg-green-900/50 text-green-400' : 
-                              log.aiDecision?.includes('ERROR') ? 'bg-yellow-900/50 text-yellow-400' :
-                              'bg-red-900/50 text-red-400'
-                            }`}>
-                              {log.aiDecision?.substring(0, 45) || "Unknown"}{log.aiDecision?.length > 45 ? '...' : ''}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Identity Provider Panel */}
+          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl flex flex-col items-center">
+            <h2 className="text-xl font-bold mb-4 text-white">Identity Provider</h2>
+            <p className="text-sm text-slate-400 mb-6">Authentication via Supabase Auth</p>
+            <div className="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mb-4">👤</div>
+            <p className="text-emerald-400 font-bold">Authenticated User</p>
+            <p className="text-slate-300 mb-2">{user.email}</p>
+            <span className={`px-3 py-1 rounded-full text-xs font-bold mb-6 ${isAdmin ? 'bg-purple-900 text-purple-300' : 'bg-blue-900 text-blue-300'}`}>
+              Role: {isAdmin ? 'ADMIN' : 'EMPLOYEE'}
+            </span>
+            <button onClick={handleLogout} className="w-full py-2 bg-slate-700 hover:bg-slate-600 rounded font-bold transition">Sign Out</button>
+          </div>
+
+          {/* AI Logic Engine Panel */}
+          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
+             <h2 className="text-xl font-bold mb-4 text-center text-white">AI Logic Engine</h2>
+             <p className="text-sm text-slate-400 mb-6 text-center">Serverless Compute + AWS Bedrock</p>
+             <div className="flex space-x-4 mb-4">
+                <div className="flex-1">
+                  <label className="text-xs text-slate-400">Merchant Name</label>
+                  <input type="text" value={merchant} onChange={(e)=>setMerchant(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded p-2 mt-1" />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-slate-400">Amount ($)</label>
+                  <input type="number" value={amount} onChange={(e)=>setAmount(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded p-2 mt-1" />
+                </div>
+             </div>
+             <button onClick={handleSwipe} className="w-full py-3 bg-orange-600 hover:bg-orange-700 rounded font-bold text-white shadow-lg">2. Swipe Corporate Card</button>
+             {swipeStatus && <p className="mt-4 text-center text-sm font-mono text-emerald-400">{swipeStatus}</p>}
           </div>
         </div>
-      )}
-    </main>
+
+        {/* Ledger */}
+        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Company-Wide Audit Ledger</h2>
+              <p className="text-sm text-slate-400">Live NoSQL feed via AWS DynamoDB</p>
+            </div>
+            <button onClick={fetchLogs} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded font-bold text-sm">↻ Refresh</button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-900 text-slate-400 font-bold">
+                <tr>
+                  <th className="p-4 rounded-tl-lg">Timestamp</th>
+                  <th className="p-4">Employee</th>
+                  <th className="p-4">Merchant</th>
+                  <th className="p-4">Amount</th>
+                  <th className="p-4 rounded-tr-lg">AI Decision</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.length === 0 ? (
+                  <tr><td colSpan={5} className="p-4 text-center text-slate-500">No transactions found.</td></tr>
+                ) : (
+                  logs.map((log: any) => {
+                    const isHighRisk = highRiskUsers.includes(log.email);
+                    return (
+                      <tr key={log.id} className="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors">
+                        <td className="p-4 text-slate-400 font-mono text-xs">{new Date(log.timestamp).toLocaleString()}</td>
+                        <td className={`p-4 font-medium ${isHighRisk ? 'text-red-400' : 'text-blue-300'}`}>
+                           {isHighRisk && <span className="mr-2">⚠️</span>}
+                           {log.email}
+                        </td>
+                        <td className="p-4 text-white">{log.merchant}</td>
+                        <td className="p-4 text-slate-300">${parseFloat(log.amount).toFixed(2)}</td>
+                        <td className="p-4">
+                           <span className={`px-2 py-1 rounded text-xs font-bold ${log.aiDecision?.includes('APPROVED') ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
+                              {log.aiDecision}
+                           </span>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
   );
 }
