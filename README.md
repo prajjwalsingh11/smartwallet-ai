@@ -22,6 +22,8 @@ Polyglot Persistence: Successfully separated database workloads. Relational data
 
 Enterprise Cloud Security & RBAC: Implemented strict IAM policies (Principle of Least Privilege) for Lambda. Engineered strict Role-Based Access Control (RBAC) via Supabase JWT metadata, utilizing programmatic backend validation over insecure client-side role assignment.
 
+Admin Threat Analytics & Risk Scoring: Created an advanced admin dashboard that automatically aggregates company-wide approved spend and dynamically flags high-risk employees (users with 2+ policy violations) using a derived analytics engine.
+
 Graceful Error Handling & Resiliency: The application safely catches cloud-level errors (e.g., AWS ThrottlingException account quotas) and handles CORS API gateway restrictions without crashing the client UI.
 
 CI/CD Pipeline: Integrated a continuous deployment pipeline via GitHub and Vercel for zero-downtime production updates.
@@ -44,7 +46,11 @@ To further emulate a hyperscale enterprise application, the following architectu
 
 Advanced Infrastructure & Decoupling
 
-Strict Role-Based Access Control (RBAC): Implementing Zero-Trust permission boundaries via Supabase PostgreSQL policies. Roles are programmatically enforced based on domain whitelisting. Admins access the global immutable ledger, while standard employees are restricted to their personal transaction history.
+Zero-Trust RBAC & Tenant Data Isolation: Roles are programmatically enforced via Supabase JWTs. The backend architecture dynamically routes database access:
+
+Finance Admins are granted global Scan permissions on DynamoDB to view the company-wide immutable ledger and analytics.
+
+Standard Employees utilize DynamoDB Global Secondary Indexes (GSIs) to securely query and view only their personal, isolated transaction history.
 
 Asynchronous Message Queueing (AWS SQS): Decoupling the frontend from the AI processing engine. High-volume, concurrent transaction spikes will be buffered into an SQS Queue and processed by background worker Lambdas to prevent API timeouts and guarantee fault tolerance.
 

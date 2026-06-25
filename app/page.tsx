@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-
 import { supabase } from '../utils/supabase';
 
 export default function Home() {
@@ -20,19 +19,26 @@ export default function Home() {
   const [amountInput, setAmountInput] = useState("25.50");
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
+  // --- Admin Analytics State ---
+  const [filterEmail, setFilterEmail] = useState("ALL");
+
   // --- Initialize: Check User Session & Fetch Logs ---
   useEffect(() => {
     // 1. Check if user is already logged in
     supabase.auth.getSession().then(({ data: { session } }: any) => {
-      setUser(session?.user ?? null);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) fetchAuditLogs(currentUser);
     });
 
     // 2. Listen for login/logout events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
-      setUser(session?.user ?? null);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) fetchAuditLogs(currentUser);
     });
 
-    // 3. Fetch audit logs for the dashboard
+    // 3. Fetch audit logs for the dashboard (Initial fetch)
     fetchAuditLogs();
 
     return () => {
@@ -50,8 +56,6 @@ export default function Home() {
     
     if (isSignUp) {
       // ENTERPRISE SECURITY FIX: Programmatic Role Assignment
-      // Users can no longer self-assign roles. The system enforces 'admin' 
-      // ONLY if their registered email contains 'admin'. Otherwise, 'employee'.
       const assignedRole = email.toLowerCase().includes('admin') ? 'admin' : 'employee';
 
       // Inject the securely computed role into user metadata during signup
@@ -77,15 +81,23 @@ export default function Home() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     setAuthMessage("Logged out securely.");
+    setAuditLogs([]); // Clear logs on sign out
   };
 
   // --- AWS Lambda (Fetch Logs) ---
-  const fetchAuditLogs = async () => {
+  const fetchAuditLogs = async (activeUser?: any) => {
+    const targetUser = activeUser || user;
+    if (!targetUser) return;
+
     const lambdaUrl = process.env.NEXT_PUBLIC_AWS_LAMBDA_URL;
     if (!lambdaUrl) return;
     
+    const role = targetUser.user_metadata?.role || 'employee';
+    const userEmail = targetUser.email;
+    
     try {
-      const response = await fetch(lambdaUrl); 
+      // Send role and email to Lambda for Tenant Data Isolation
+      const response = await fetch(`${lambdaUrl}?role=${role}&email=${encodeURIComponent(userEmail)}`); 
       const data = await response.json();
       if (Array.isArray(data)) setAuditLogs(data);
     } catch (error) {
@@ -112,7 +124,8 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           merchant: merchantInput,
-          amount: parseFloat(amountInput) || 0
+          amount: parseFloat(amountInput) || 0,
+          email: user.email // Send email to tag the transaction
         })
       });
 
@@ -129,6 +142,31 @@ export default function Home() {
       setAwsStatus(`Network Error: ${error.message}`);
     }
   };
+
+  // --- Derived Analytics Logic (For Admins) ---
+  const uniqueEmails = Array.from(new Set(auditLogs.map(log => log.email))).filter(Boolean) as string[];
+  
+  const userStats = auditLogs.reduce((acc: any, log) => {
+    if (!log.email) return acc;
+    if (!acc[log.email]) acc[log.email] = { totalSpend: 0, declines: 0 };
+    if (log.aiDecision?.includes('APPROVED')) {
+      acc[log.email].totalSpend += parseFloat(log.amount || 0);
+    }
+    if (log.aiDecision?.includes('DECLINED') || log.aiDecision?.includes('ERROR')) {
+      acc[log.email].declines += 1;
+    }
+    return acc;
+  }, {});
+
+  const totalApprovedSpend = Object.values(userStats).reduce((sum: any, stat: any) => sum + stat.totalSpend, 0) as number;
+  
+  // Identify users with 2 or more declined transactions
+  const flaggedUsers = Object.entries(userStats)
+    .filter(([_, stats]: any) => stats.declines >= 2)
+    .map(([email]) => email);
+    
+  // Filter logs for the table
+  const filteredLogs = filterEmail === "ALL" ? auditLogs : auditLogs.filter(log => log.email === filterEmail);
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-start bg-gray-900 text-white p-8 md:p-12">
@@ -267,60 +305,103 @@ export default function Home() {
 
       </div>
 
-      {/* --- 3. Live Audit Ledger Panel --- */}
-      {/* SECURITY RULE: Only render this block if the user's role is 'admin' */}
-      {user?.user_metadata?.role === 'admin' && (
-        <div className="w-full max-w-5xl mt-8 bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl mb-12">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h3 className="text-2xl font-bold">Immutable Audit Ledger</h3>
-              <p className="text-sm text-gray-400">Live NoSQL feed via AWS DynamoDB</p>
-            </div>
-            <button 
-              onClick={fetchAuditLogs}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold transition-all active:scale-95"
-            >
-              ↻ Refresh
-            </button>
-          </div>
+      {/* --- 3. Live Audit Ledger & Analytics Panel --- */}
+      {user && (
+        <div className="w-full max-w-5xl mt-8">
           
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-gray-900 text-gray-400">
-                <tr>
-                  <th className="p-3 rounded-tl-lg">Timestamp</th>
-                  <th className="p-3">Merchant</th>
-                  <th className="p-3">Amount</th>
-                  <th className="p-3 rounded-tr-lg">AI Decision</th>
-                </tr>
-              </thead>
-              <tbody>
-                {auditLogs.length === 0 ? (
+          {/* ADMIN ANALYTICS DASHBOARD */}
+          {user.user_metadata?.role === 'admin' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-lg">
+                <h4 className="text-xs text-gray-400 mb-1">Company Approved Spend</h4>
+                <p className="text-2xl font-bold text-emerald-400">${totalApprovedSpend.toFixed(2)}</p>
+              </div>
+              <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-lg">
+                <h4 className="text-xs text-gray-400 mb-1">High-Risk Users (2+ Declines)</h4>
+                <p className={`text-2xl font-bold ${flaggedUsers.length > 0 ? 'text-red-400' : 'text-gray-300'}`}>
+                  {flaggedUsers.length} Users
+                </p>
+              </div>
+              <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-lg flex flex-col justify-center">
+                <label className="block text-xs text-gray-400 mb-1">Filter by Employee</label>
+                <select 
+                  value={filterEmail}
+                  onChange={(e) => setFilterEmail(e.target.value)}
+                  className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500 text-sm"
+                >
+                  <option value="ALL">All Employees</option>
+                  {uniqueEmails.map(em => (
+                    <option key={em} value={em}>{em}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* LEDGER TABLE */}
+          <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl mb-12">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-2xl font-bold">
+                  {user.user_metadata?.role === 'admin' ? 'Company-Wide Audit Ledger' : 'Your Transaction History'}
+                </h3>
+                <p className="text-sm text-gray-400">Live NoSQL feed via AWS DynamoDB</p>
+              </div>
+              <button 
+                onClick={() => fetchAuditLogs()}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold transition-all active:scale-95"
+              >
+                ↻ Refresh
+              </button>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-900 text-gray-400">
                   <tr>
-                    <td colSpan={4} className="p-4 text-center text-gray-500">No transactions found in ledger.</td>
+                    <th className="p-3 rounded-tl-lg">Timestamp</th>
+                    <th className="p-3">Employee</th>
+                    <th className="p-3">Merchant</th>
+                    <th className="p-3">Amount</th>
+                    <th className="p-3 rounded-tr-lg">AI Decision</th>
                   </tr>
-                ) : (
-                  auditLogs.map((log, index) => (
-                    <tr key={index} className="border-b border-gray-700 hover:bg-gray-750">
-                      <td className="p-3 text-gray-400 font-mono text-xs">
-                        {new Date(log.timestamp).toLocaleString()}
-                      </td>
-                      <td className="p-3 font-semibold">{log.merchant}</td>
-                      <td className="p-3 font-mono">${parseFloat(log.amount).toFixed(2)}</td>
-                      <td className="p-3">
-                        <span className={`px-2 py-1 rounded text-xs font-bold ${
-                          log.aiDecision?.includes('APPROVED') ? 'bg-green-900/50 text-green-400' : 
-                          log.aiDecision?.includes('ERROR') ? 'bg-yellow-900/50 text-yellow-400' :
-                          'bg-red-900/50 text-red-400'
-                        }`}>
-                          {log.aiDecision?.substring(0, 45) || "Unknown"}{log.aiDecision?.length > 45 ? '...' : ''}
-                        </span>
-                      </td>
+                </thead>
+                <tbody>
+                  {filteredLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-4 text-center text-gray-500">No transactions found.</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filteredLogs.map((log, index) => {
+                      const isFlagged = flaggedUsers.includes(log.email);
+                      return (
+                        <tr key={index} className="border-b border-gray-700 hover:bg-gray-750">
+                          <td className="p-3 text-gray-400 font-mono text-xs">
+                            {new Date(log.timestamp).toLocaleString()}
+                          </td>
+                          <td className="p-3 font-semibold">
+                            <span className={isFlagged ? 'text-red-400 font-bold flex items-center gap-1' : 'text-blue-400'}>
+                              {isFlagged && '⚠️ '} {log.email || "Unknown"}
+                            </span>
+                          </td>
+                          <td className="p-3 font-semibold">{log.merchant}</td>
+                          <td className="p-3 font-mono">${parseFloat(log.amount).toFixed(2)}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${
+                              log.aiDecision?.includes('APPROVED') ? 'bg-green-900/50 text-green-400' : 
+                              log.aiDecision?.includes('ERROR') ? 'bg-yellow-900/50 text-yellow-400' :
+                              'bg-red-900/50 text-red-400'
+                            }`}>
+                              {log.aiDecision?.substring(0, 45) || "Unknown"}{log.aiDecision?.length > 45 ? '...' : ''}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
