@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../utils/supabase';
+import { supabase } from '../utils/supabase'; // Real Supabase connection
 
 export default function Home() {
   // --- Auth State ---
@@ -9,6 +9,7 @@ export default function Home() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
+  const [role, setRole] = useState('employee'); // RBAC role state
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
 
@@ -44,7 +45,16 @@ export default function Home() {
     setAuthMessage("");
     
     if (isSignUp) {
-      const { error } = await supabase.auth.signUp({ email, password });
+      // Inject the selected role into user metadata during signup
+      const { error } = await supabase.auth.signUp({ 
+        email, 
+        password,
+        options: {
+          data: {
+            role: role 
+          }
+        }
+      });
       if (error) setAuthMessage(`Error: ${error.message}`);
       else setAuthMessage("Success! You can now log in.");
     } else {
@@ -130,8 +140,14 @@ export default function Home() {
               <div className="h-16 w-16 bg-emerald-900/50 rounded-full flex items-center justify-center mb-4 border border-emerald-500">
                 <span className="text-2xl">👤</span>
               </div>
-              <p className="text-emerald-400 font-bold mb-1">Authenticated Employee</p>
-              <p className="text-gray-400 text-sm mb-6">{user.email}</p>
+              <p className="text-emerald-400 font-bold mb-1">Authenticated User</p>
+              <p className="text-gray-400 text-sm mb-3">{user.email}</p>
+              
+              {/* Show Role Badge based on Supabase JWT metadata */}
+              <span className={`px-3 py-1 rounded-full text-xs font-bold mb-6 ${user.user_metadata?.role === 'admin' ? 'bg-purple-900/50 text-purple-400 border border-purple-500' : 'bg-blue-900/50 text-blue-400 border border-blue-500'}`}>
+                Role: {user.user_metadata?.role?.toUpperCase() || 'EMPLOYEE'}
+              </span>
+
               <button 
                 onClick={handleSignOut}
                 className="px-6 py-2 w-full bg-gray-700 hover:bg-gray-600 rounded font-bold transition-all active:scale-95 text-sm"
@@ -161,6 +177,22 @@ export default function Home() {
                   className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
+
+              {/* Role Selector (Only visible during Sign Up) */}
+              {isSignUp && (
+                <div className="mb-6">
+                  <label className="block text-xs text-gray-400 mb-1">Account Role</label>
+                  <select 
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="employee">Standard Employee</option>
+                    <option value="admin">Finance Admin</option>
+                  </select>
+                </div>
+              )}
+
               <button 
                 type="submit"
                 disabled={authLoading}
@@ -242,59 +274,62 @@ export default function Home() {
       </div>
 
       {/* --- 3. Live Audit Ledger Panel --- */}
-      <div className="w-full max-w-5xl mt-8 bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl mb-12">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h3 className="text-2xl font-bold">Immutable Audit Ledger</h3>
-            <p className="text-sm text-gray-400">Live NoSQL feed via AWS DynamoDB</p>
+      {/* SECURITY RULE: Only render this block if the user's role is 'admin' */}
+      {user?.user_metadata?.role === 'admin' && (
+        <div className="w-full max-w-5xl mt-8 bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl mb-12">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h3 className="text-2xl font-bold">Immutable Audit Ledger</h3>
+              <p className="text-sm text-gray-400">Live NoSQL feed via AWS DynamoDB</p>
+            </div>
+            <button 
+              onClick={fetchAuditLogs}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold transition-all active:scale-95"
+            >
+              ↻ Refresh
+            </button>
           </div>
-          <button 
-            onClick={fetchAuditLogs}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold transition-all active:scale-95"
-          >
-            ↻ Refresh
-          </button>
-        </div>
-        
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-900 text-gray-400">
-              <tr>
-                <th className="p-3 rounded-tl-lg">Timestamp</th>
-                <th className="p-3">Merchant</th>
-                <th className="p-3">Amount</th>
-                <th className="p-3 rounded-tr-lg">AI Decision</th>
-              </tr>
-            </thead>
-            <tbody>
-              {auditLogs.length === 0 ? (
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-900 text-gray-400">
                 <tr>
-                  <td colSpan={4} className="p-4 text-center text-gray-500">No transactions found in ledger.</td>
+                  <th className="p-3 rounded-tl-lg">Timestamp</th>
+                  <th className="p-3">Merchant</th>
+                  <th className="p-3">Amount</th>
+                  <th className="p-3 rounded-tr-lg">AI Decision</th>
                 </tr>
-              ) : (
-                auditLogs.map((log, index) => (
-                  <tr key={index} className="border-b border-gray-700 hover:bg-gray-750">
-                    <td className="p-3 text-gray-400 font-mono text-xs">
-                      {new Date(log.timestamp).toLocaleString()}
-                    </td>
-                    <td className="p-3 font-semibold">{log.merchant}</td>
-                    <td className="p-3 font-mono">${parseFloat(log.amount).toFixed(2)}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-1 rounded text-xs font-bold ${
-                        log.aiDecision?.includes('APPROVED') ? 'bg-green-900/50 text-green-400' : 
-                        log.aiDecision?.includes('ERROR') ? 'bg-yellow-900/50 text-yellow-400' :
-                        'bg-red-900/50 text-red-400'
-                      }`}>
-                        {log.aiDecision?.substring(0, 45) || "Unknown"}{log.aiDecision?.length > 45 ? '...' : ''}
-                      </span>
-                    </td>
+              </thead>
+              <tbody>
+                {auditLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="p-4 text-center text-gray-500">No transactions found in ledger.</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  auditLogs.map((log, index) => (
+                    <tr key={index} className="border-b border-gray-700 hover:bg-gray-750">
+                      <td className="p-3 text-gray-400 font-mono text-xs">
+                        {new Date(log.timestamp).toLocaleString()}
+                      </td>
+                      <td className="p-3 font-semibold">{log.merchant}</td>
+                      <td className="p-3 font-mono">${parseFloat(log.amount).toFixed(2)}</td>
+                      <td className="p-3">
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${
+                          log.aiDecision?.includes('APPROVED') ? 'bg-green-900/50 text-green-400' : 
+                          log.aiDecision?.includes('ERROR') ? 'bg-yellow-900/50 text-yellow-400' :
+                          'bg-red-900/50 text-red-400'
+                        }`}>
+                          {log.aiDecision?.substring(0, 45) || "Unknown"}{log.aiDecision?.length > 45 ? '...' : ''}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
     </main>
   );
 }
