@@ -8,7 +8,7 @@ export default function Home() {
   const [password, setPassword] = useState("");
   const [user, setUser] = useState<any>(null);
   const [isSignUp, setIsSignUp] = useState(false);
-  const [isForgotPassword, setIsForgotPassword] = useState(false); // New state for Forgot Password
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [message, setMessage] = useState("");
 
   const [merchant, setMerchant] = useState("");
@@ -22,19 +22,22 @@ export default function Home() {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       setUser(session?.user || null);
-      if (session?.user) {
-        fetchLogs();
-      }
     };
     checkUser();
   }, []);
+
+  // Fetch logs whenever the user state changes (after login or page load)
+  useEffect(() => {
+    if (user) {
+      fetchLogs();
+    }
+  }, [user]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage("");
 
     if (isForgotPassword) {
-      // Forgot Password Logic
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: window.location.origin,
       });
@@ -44,18 +47,15 @@ export default function Home() {
     }
 
     if (isSignUp) {
-      // Sign Up Logic
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) setMessage(`Error: ${error.message}`);
       else setMessage("Success! You can now log in.");
     } else {
-      // Login Logic
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) setMessage(`Error: ${error.message}`);
       else {
         setUser(data.user);
         setMessage("Successfully logged in!");
-        fetchLogs();
       }
     }
   };
@@ -67,9 +67,12 @@ export default function Home() {
     setMessage("");
   };
 
+  // UPDATED: Now securely passes the user email to the AWS Lambda backend
   const fetchLogs = async () => {
+    if (!user?.email) return;
+
     try {
-      const res = await fetch(AWS_API_URL);
+      const res = await fetch(`${AWS_API_URL}?email=${encodeURIComponent(user.email)}`);
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
       setLogs(data);
@@ -104,7 +107,7 @@ export default function Home() {
     }
   };
 
-  // Threat Analytics Logic
+  // Threat Analytics Logic (UI Mockup)
   const getHighRiskUsers = () => {
     const declines = logs.filter((log) => 
       log.aiDecision?.includes("DECLINED") || log.aiDecision?.includes("ERROR")
@@ -115,6 +118,7 @@ export default function Home() {
     });
     return Object.keys(userStrikes).filter((email) => userStrikes[email] >= 2);
   };
+  
   const highRiskUsers = getHighRiskUsers();
   const isAdmin = user?.email?.includes("admin");
 
