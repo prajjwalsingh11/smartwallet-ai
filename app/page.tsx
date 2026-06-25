@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../utils/supabase';
+import { supabase } from '../utils/supabase'; // Make sure this path is correct for your project!
 
 export default function Home() {
   // --- Auth State ---
@@ -9,6 +9,7 @@ export default function Home() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false); // Forgot Password State
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
 
@@ -24,21 +25,18 @@ export default function Home() {
 
   // --- Initialize: Check User Session & Fetch Logs ---
   useEffect(() => {
-    // 1. Check if user is already logged in
     supabase.auth.getSession().then(({ data: { session } }: any) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) fetchAuditLogs(currentUser);
     });
 
-    // 2. Listen for login/logout events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) fetchAuditLogs(currentUser);
     });
 
-    // 3. Fetch audit logs for the dashboard (Initial fetch)
     fetchAuditLogs();
 
     return () => {
@@ -55,18 +53,13 @@ export default function Home() {
     setAuthMessage("");
     
     if (isSignUp) {
-      // ENTERPRISE SECURITY FIX: Programmatic Role Assignment
+      // ENTERPRISE SECURITY: Programmatic Role Assignment (No UI Dropdown)
       const assignedRole = email.toLowerCase().includes('admin') ? 'admin' : 'employee';
 
-      // Inject the securely computed role into user metadata during signup
       const { error } = await supabase.auth.signUp({ 
         email, 
         password,
-        options: {
-          data: {
-            role: assignedRole 
-          }
-        }
+        options: { data: { role: assignedRole } }
       });
       if (error) setAuthMessage(`Error: ${error.message}`);
       else setAuthMessage("Success! You can now log in.");
@@ -75,6 +68,21 @@ export default function Home() {
       if (error) setAuthMessage(`Error: ${error.message}`);
       else setAuthMessage("Successfully logged in!");
     }
+    setAuthLoading(false);
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthMessage("");
+    
+    // Sends a secure recovery email via Supabase
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin, // Redirects back to app
+    });
+    
+    if (error) setAuthMessage(`Error: ${error.message}`);
+    else setAuthMessage("Password reset link sent to your email!");
     setAuthLoading(false);
   };
 
@@ -96,7 +104,7 @@ export default function Home() {
     const userEmail = targetUser.email;
     
     try {
-      // Send role and email to Lambda for Tenant Data Isolation
+      // Passes role & email for Tenant Data Isolation on backend
       const response = await fetch(`${lambdaUrl}?role=${role}&email=${encodeURIComponent(userEmail)}`); 
       const data = await response.json();
       if (Array.isArray(data)) setAuditLogs(data);
@@ -134,7 +142,7 @@ export default function Home() {
       if (data && data.decision) {
         setAwsStatus(`Success! Merchant: ${data.merchantAnalyzed} ($${data.amountProcessed})`);
         setAiDecision(`AI Engine: ${data.decision}`);
-        fetchAuditLogs(); // Refresh ledger
+        fetchAuditLogs(); // Refresh ledger instantly
       } else {
         setAwsStatus(`Received anomaly: ${JSON.stringify(data).substring(0, 60)}...`);
       }
@@ -143,15 +151,17 @@ export default function Home() {
     }
   };
 
-  // --- Derived Analytics Logic (For Admins) ---
+  // --- Threat Analytics Engine (For Admins) ---
   const uniqueEmails = Array.from(new Set(auditLogs.map(log => log.email))).filter(Boolean) as string[];
   
   const userStats = auditLogs.reduce((acc: any, log) => {
     if (!log.email) return acc;
     if (!acc[log.email]) acc[log.email] = { totalSpend: 0, declines: 0 };
+    
     if (log.aiDecision?.includes('APPROVED')) {
       acc[log.email].totalSpend += parseFloat(log.amount || 0);
     }
+    // Count both literal DECLINED and AWS Throttling ERRORs as strikes
     if (log.aiDecision?.includes('DECLINED') || log.aiDecision?.includes('ERROR')) {
       acc[log.email].declines += 1;
     }
@@ -160,12 +170,12 @@ export default function Home() {
 
   const totalApprovedSpend = Object.values(userStats).reduce((sum: any, stat: any) => sum + stat.totalSpend, 0) as number;
   
-  // Identify users with 2 or more declined transactions
+  // Flag users with 2 or more declined/error transactions
   const flaggedUsers = Object.entries(userStats)
     .filter(([_, stats]: any) => stats.declines >= 2)
     .map(([email]) => email);
     
-  // Filter logs for the table
+  // Apply Dropdown Filter
   const filteredLogs = filterEmail === "ALL" ? auditLogs : auditLogs.filter(log => log.email === filterEmail);
 
   return (
@@ -190,19 +200,40 @@ export default function Home() {
               <p className="text-emerald-400 font-bold mb-1">Authenticated User</p>
               <p className="text-gray-400 text-sm mb-3">{user.email}</p>
               
-              {/* Show Role Badge based on Supabase JWT metadata */}
               <span className={`px-3 py-1 rounded-full text-xs font-bold mb-6 ${user.user_metadata?.role === 'admin' ? 'bg-purple-900/50 text-purple-400 border border-purple-500' : 'bg-blue-900/50 text-blue-400 border border-blue-500'}`}>
                 Role: {user.user_metadata?.role?.toUpperCase() || 'EMPLOYEE'}
               </span>
 
-              <button 
-                onClick={handleSignOut}
-                className="px-6 py-2 w-full bg-gray-700 hover:bg-gray-600 rounded font-bold transition-all active:scale-95 text-sm"
-              >
+              <button onClick={handleSignOut} className="px-6 py-2 w-full bg-gray-700 hover:bg-gray-600 rounded font-bold transition-all active:scale-95 text-sm">
                 Sign Out
               </button>
             </div>
+          ) : isForgotPassword ? (
+            /* --- FORGOT PASSWORD FORM --- */
+            <form onSubmit={handleResetPassword} className="w-full">
+              <div className="mb-6">
+                <label className="block text-xs text-gray-400 mb-1">Corporate Email</label>
+                <input 
+                  type="email" 
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              <button 
+                type="submit"
+                disabled={authLoading}
+                className="px-6 py-3 w-full bg-purple-600 hover:bg-purple-500 rounded-lg font-bold transition-all active:scale-95 mb-4 disabled:opacity-50"
+              >
+                {authLoading ? "Processing..." : "Send Reset Link"}
+              </button>
+              <p className="text-xs text-center text-gray-400 cursor-pointer hover:text-purple-400" onClick={() => setIsForgotPassword(false)}>
+                Back to Secure Login
+              </p>
+            </form>
           ) : (
+            /* --- LOGIN / SIGNUP FORM --- */
             <form onSubmit={handleAuth} className="w-full">
               <div className="mb-4">
                 <label className="block text-xs text-gray-400 mb-1">Corporate Email</label>
@@ -232,9 +263,17 @@ export default function Home() {
               >
                 {authLoading ? "Processing..." : (isSignUp ? "Create Account" : "Secure Login")}
               </button>
-              <p className="text-xs text-center text-gray-400 cursor-pointer hover:text-blue-400" onClick={() => setIsSignUp(!isSignUp)}>
-                {isSignUp ? "Already have an account? Sign In" : "Need access? Create Account"}
-              </p>
+              
+              <div className="flex flex-col gap-3 mt-2">
+                <p className="text-xs text-center text-gray-400 cursor-pointer hover:text-blue-400" onClick={() => setIsSignUp(!isSignUp)}>
+                  {isSignUp ? "Already have an account? Sign In" : "Need access? Create Account"}
+                </p>
+                {!isSignUp && (
+                  <p className="text-xs text-center text-gray-500 cursor-pointer hover:text-purple-400 transition-colors" onClick={() => setIsForgotPassword(true)}>
+                    Forgot Password?
+                  </p>
+                )}
+              </div>
             </form>
           )}
 
@@ -302,7 +341,6 @@ export default function Home() {
             )}
           </div>
         </div>
-
       </div>
 
       {/* --- 3. Live Audit Ledger & Analytics Panel --- */}

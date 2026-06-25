@@ -8,7 +8,7 @@ This project demonstrates a modern, decoupled cloud architecture utilizing Polyg
 
 Frontend (Edge): Next.js hosted on Vercel for low-latency, globally distributed UI delivery.
 
-Authentication & Relational Data: Supabase (PostgreSQL) handles secure user identity and structured employee data.
+Authentication & Relational Data: Supabase (PostgreSQL) handles secure user identity, JWT generation, and password recovery flows.
 
 Compute Engine: AWS Lambda acts as the serverless routing brain, scaling instantly from zero to thousands of concurrent executions.
 
@@ -18,13 +18,17 @@ Immutable Audit Ledger: AWS DynamoDB (NoSQL) captures high-throughput transactio
 
 ✨ Key Technical Achievements
 
-Polyglot Persistence: Successfully separated database workloads. Relational data (users/auth) stays in PostgreSQL, while high-velocity, schema-less audit logs are streamed to DynamoDB.
+Polyglot Persistence: Successfully separated database workloads. Relational authentication stays in PostgreSQL, while high-velocity, schema-less audit logs are streamed to DynamoDB.
 
-Enterprise Cloud Security & RBAC: Implemented strict IAM policies (Principle of Least Privilege) for Lambda. Engineered strict Role-Based Access Control (RBAC) via Supabase JWT metadata, utilizing programmatic backend validation over insecure client-side role assignment.
+Zero-Trust RBAC & Tenant Data Isolation: Implemented Role-Based Access Control via Supabase JWT metadata. The system uses programmatic domain-whitelisting to prevent privilege escalation.
 
-Admin Threat Analytics & Risk Scoring: Created an advanced admin dashboard that automatically aggregates company-wide approved spend and dynamically flags high-risk employees (users with 2+ policy violations) using a derived analytics engine.
+Finance Admins are granted global Scan access on DynamoDB to view the company-wide ledger.
 
-Graceful Error Handling & Resiliency: The application safely catches cloud-level errors (e.g., AWS ThrottlingException account quotas) and handles CORS API gateway restrictions without crashing the client UI.
+Standard Employees are restricted to their personal transaction history via strict backend filtering.
+
+Threat Analytics & Risk Scoring Engine: Built a derived analytics dashboard that automatically aggregates company-wide approved spend and dynamically flags high-risk employees (users with 2+ policy violations).
+
+Advanced Prompt Engineering: Engineered strict structural guardrails for the AWS Bedrock LLM, forcing JSON-like deterministic outputs (APPROVED/DECLINED) based on specific budget ceilings ($100 for transport, $50 for meals) while catching and parsing AWS ThrottlingExceptions gracefully.
 
 CI/CD Pipeline: Integrated a continuous deployment pipeline via GitHub and Vercel for zero-downtime production updates.
 
@@ -32,25 +36,19 @@ CI/CD Pipeline: Integrated a continuous deployment pipeline via GitHub and Verce
 
 An authenticated user simulates a corporate card swipe via the Next.js dashboard.
 
-An API request is securely routed to the AWS Lambda function.
+An API request containing the user's role and email is securely routed to the AWS Lambda function.
 
-Lambda constructs a strict context window and queries AWS Bedrock to evaluate the merchant and amount against corporate policy.
+Lambda constructs a strict context window and queries AWS Bedrock to evaluate the merchant and amount against corporate policy limits.
 
 The AI decision is instantly written to the DynamoDB NoSQL ledger.
 
-The frontend automatically fetches the updated ledger via a GET request to Lambda, reflecting the immutable log in real-time.
+The frontend automatically fetches the updated ledger, reflecting the isolated, immutable log in real-time.
 
 🔮 V2 Roadmap (Upcoming Enterprise Features)
 
-To further emulate a hyperscale enterprise application, the following architectural upgrades are planned for Version 2:
+To further emulate a hyperscale enterprise application, the following architectural upgrades are planned:
 
 Advanced Infrastructure & Decoupling
-
-Zero-Trust RBAC & Tenant Data Isolation: Roles are programmatically enforced via Supabase JWTs. The backend architecture dynamically routes database access:
-
-Finance Admins are granted global Scan permissions on DynamoDB to view the company-wide immutable ledger and analytics.
-
-Standard Employees utilize DynamoDB Global Secondary Indexes (GSIs) to securely query and view only their personal, isolated transaction history.
 
 Asynchronous Message Queueing (AWS SQS): Decoupling the frontend from the AI processing engine. High-volume, concurrent transaction spikes will be buffered into an SQS Queue and processed by background worker Lambdas to prevent API timeouts and guarantee fault tolerance.
 
@@ -61,8 +59,6 @@ Applied Generative AI
 Multimodal Vision AI (Receipt Processing): Integrating AWS S3 for secure receipt image uploads. AWS Bedrock (multimodal models) will extract, read, and cross-verify physical receipt line items against the digital swipe amount to detect tampering or discrepancies.
 
 RAG-Powered Dynamic Policy Enforcement: Transitioning from static system prompts to Retrieval-Augmented Generation (RAG). The AI will dynamically retrieve compliance context from a vectorized corporate handbook (stored via pgvector in Supabase) to justify approvals or declines with exact policy citations.
-
-Natural Language Audit Agents (Text-to-SQL): Building an AI data analyst agent for the finance team. Admins will be able to type natural language queries (e.g., "Show me all declined transport expenses in Q3"), which the LLM will translate into executable Athena SQL queries to instantly generate visual dashboard charts.
 
 💻 Local Development
 
