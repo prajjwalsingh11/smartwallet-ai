@@ -20,7 +20,7 @@ Immutable Audit Ledger: AWS DynamoDB (NoSQL) captures high-throughput transactio
 
 Polyglot Persistence: Successfully separated database workloads. Relational data (users/auth) stays in PostgreSQL, while high-velocity, schema-less audit logs are streamed to DynamoDB.
 
-Enterprise Cloud Security: Implemented strict IAM (Identity and Access Management) policies, adhering to the Principle of Least Privilege for Lambda-to-Bedrock/DynamoDB communications.
+Enterprise Cloud Security & RBAC: Implemented strict IAM policies (Principle of Least Privilege) for Lambda. Engineered strict Role-Based Access Control (RBAC) via Supabase JWT metadata, utilizing programmatic backend validation over insecure client-side role assignment.
 
 Graceful Error Handling & Resiliency: The application safely catches cloud-level errors (e.g., AWS ThrottlingException account quotas) and handles CORS API gateway restrictions without crashing the client UI.
 
@@ -37,6 +37,26 @@ Lambda constructs a strict context window and queries AWS Bedrock to evaluate th
 The AI decision is instantly written to the DynamoDB NoSQL ledger.
 
 The frontend automatically fetches the updated ledger via a GET request to Lambda, reflecting the immutable log in real-time.
+
+🔮 V2 Roadmap (Upcoming Enterprise Features)
+
+To further emulate a hyperscale enterprise application, the following architectural upgrades are planned for Version 2:
+
+Advanced Infrastructure & Decoupling
+
+Strict Role-Based Access Control (RBAC): Implementing Zero-Trust permission boundaries via Supabase PostgreSQL policies. Roles are programmatically enforced based on domain whitelisting. Admins access the global immutable ledger, while standard employees are restricted to their personal transaction history.
+
+Asynchronous Message Queueing (AWS SQS): Decoupling the frontend from the AI processing engine. High-volume, concurrent transaction spikes will be buffered into an SQS Queue and processed by background worker Lambdas to prevent API timeouts and guarantee fault tolerance.
+
+Real-time Data Lake Analytics (DynamoDB Streams + Athena): Utilizing DynamoDB Streams to pipe NoSQL transaction logs into an AWS S3 Data Lake. This will enable complex Business Intelligence (BI) aggregations using Amazon Athena's serverless SQL engine.
+
+Applied Generative AI
+
+Multimodal Vision AI (Receipt Processing): Integrating AWS S3 for secure receipt image uploads. AWS Bedrock (multimodal models) will extract, read, and cross-verify physical receipt line items against the digital swipe amount to detect tampering or discrepancies.
+
+RAG-Powered Dynamic Policy Enforcement: Transitioning from static system prompts to Retrieval-Augmented Generation (RAG). The AI will dynamically retrieve compliance context from a vectorized corporate handbook (stored via pgvector in Supabase) to justify approvals or declines with exact policy citations.
+
+Natural Language Audit Agents (Text-to-SQL): Building an AI data analyst agent for the finance team. Admins will be able to type natural language queries (e.g., "Show me all declined transport expenses in Q3"), which the LLM will translate into executable Athena SQL queries to instantly generate visual dashboard charts.
 
 💻 Local Development
 

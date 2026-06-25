@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../utils/supabase'; // Real Supabase connection
+
+import { supabase } from '../utils/supabase';
 
 export default function Home() {
   // --- Auth State ---
@@ -9,7 +10,6 @@ export default function Home() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
-  const [role, setRole] = useState('employee'); // RBAC role state
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
 
@@ -23,19 +23,23 @@ export default function Home() {
   // --- Initialize: Check User Session & Fetch Logs ---
   useEffect(() => {
     // 1. Check if user is already logged in
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: any) => {
       setUser(session?.user ?? null);
     });
 
     // 2. Listen for login/logout events
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
       setUser(session?.user ?? null);
     });
 
     // 3. Fetch audit logs for the dashboard
     fetchAuditLogs();
 
-    return () => subscription.unsubscribe();
+    return () => {
+      if (subscription && subscription.unsubscribe) {
+        subscription.unsubscribe();
+      }
+    };
   }, []);
 
   // --- Supabase Authentication Handlers ---
@@ -45,13 +49,18 @@ export default function Home() {
     setAuthMessage("");
     
     if (isSignUp) {
-      // Inject the selected role into user metadata during signup
+      // ENTERPRISE SECURITY FIX: Programmatic Role Assignment
+      // Users can no longer self-assign roles. The system enforces 'admin' 
+      // ONLY if their registered email contains 'admin'. Otherwise, 'employee'.
+      const assignedRole = email.toLowerCase().includes('admin') ? 'admin' : 'employee';
+
+      // Inject the securely computed role into user metadata during signup
       const { error } = await supabase.auth.signUp({ 
         email, 
         password,
         options: {
           data: {
-            role: role 
+            role: assignedRole 
           }
         }
       });
@@ -177,21 +186,6 @@ export default function Home() {
                   className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
-
-              {/* Role Selector (Only visible during Sign Up) */}
-              {isSignUp && (
-                <div className="mb-6">
-                  <label className="block text-xs text-gray-400 mb-1">Account Role</label>
-                  <select 
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="employee">Standard Employee</option>
-                    <option value="admin">Finance Admin</option>
-                  </select>
-                </div>
-              )}
 
               <button 
                 type="submit"
