@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../utils/supabase";
 
 // Define Admins on the frontend for UI rendering
-const ADMIN_EMAILS = ["prajwalsinghvns19@gmail.com", "prajwal_admin@gmail.com"];
+const ADMIN_EMAILS = ["prajwalsinghvns19@gmail.com", "prajjwal_admin@gmail.com"];
 
 export default function Home() {
   const [user, setUser] = useState<any>(null);
