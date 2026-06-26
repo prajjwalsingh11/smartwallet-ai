@@ -29,13 +29,19 @@ export default function Home() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user || null);
-      if (session?.user) fetchLogs(session.user.email);
+      // FIX: Ensure session, user, and email all exist before fetching
+      if (session?.user?.email) {
+        fetchLogs(session.user.email);
+      }
     });
     
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') setIsRecovery(true);
       setUser(session?.user || null);
-      if (session?.user) fetchLogs(session.user.email);
+      // FIX: Apply the exact same check here
+      if (session?.user?.email) {
+        fetchLogs(session.user.email);
+      }
     });
     
     return () => subscription.unsubscribe();
