@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../utils/supabase";
 
 // Define Admins on the frontend for UI rendering
-const ADMIN_EMAILS = ["prajwalsinghvns19@gmail.com", "prajjwal_admin@gmail.com"];
+const ADMIN_EMAILS = ["prajjwalsinghvns19@gmail.com", "prajjwal_admin@gmail.com"];
 
 export default function Home() {
   const [user, setUser] = useState<any>(null);
@@ -119,11 +119,11 @@ export default function Home() {
   // ROLLING TIME WINDOW: Only count strikes from the last 30 days
   const getHighRiskUsers = () => {
     const strikes: Record<string, number> = {};
-    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).getTime();
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).getTime();
 
     logs.forEach((log) => {
       const logTime = new Date(log.timestamp).getTime();
-      if (log.aiDecision?.startsWith("DECLINED") && logTime > oneDayAgo) {
+      if (log.aiDecision?.startsWith("DECLINED") && logTime > thirtyDaysAgo) {
         strikes[log.email] = (strikes[log.email] || 0) + 1;
       }
     });
