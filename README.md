@@ -1,64 +1,341 @@
-SmartWallet AI: Enterprise Financial Compliance Engine
+```markdown
+# 💳 SmartWallet MVP – Zero-Trust Corporate Expense Engine
 
-SmartWallet AI is an event-driven, serverless cloud application that automatically evaluates corporate card transactions against company policy using Generative AI.
+![Next.js](https://img.shields.io/badge/Next.js-15-black)
+![AWS](https://img.shields.io/badge/AWS-Lambda-orange)
+![Supabase](https://img.shields.io/badge/Auth-Supabase-green)
+![DynamoDB](https://img.shields.io/badge/Database-DynamoDB-blue)
+![License](https://img.shields.io/badge/License-MIT-brightgreen)
 
-🏗️ System Architecture
+A **serverless, enterprise-grade corporate expense management system** that evaluates employee transactions in real time using a **Zero-Trust architecture**.
 
-This project demonstrates a modern, decoupled cloud architecture utilizing Polyglot Persistence and Serverless Computing.
+This MVP demonstrates:
 
+- 🔐 Secure authentication
+- ⚡ Serverless event-driven backend
+- 📊 Real-time audit ledger
+- 🚨 Automated threat analytics
+- 💰 Cloud cost optimization through deterministic rule evaluation
 
+---
 
+# 🚀 Production Features (V1)
 
+## 🔐 1. Identity & Authentication
 
+**Provider:** Supabase Auth
 
+Features:
 
+- Secure user signup
+- User login
+- Session management
+- Password reset
+- Email verification support
 
+### Password Recovery
 
-Frontend (Edge): Next.js hosted on Vercel for low-latency, globally distributed UI delivery.
+Integrated "Forgot Password" workflow using Supabase SMTP.
 
-Authentication & Relational Data: Supabase (PostgreSQL) handles secure user identity and structured employee data.
+The frontend listens for the `PASSWORD_RECOVERY` event, allowing users to securely update their password directly from the dashboard without requiring additional backend logic.
 
-Compute Engine: AWS Lambda acts as the serverless routing brain, scaling instantly from zero to thousands of concurrent executions.
+---
 
-AI Logic Engine: AWS Bedrock (Amazon Nova Micro) processes natural language rule evaluations via strict prompt engineering and low-temperature inference.
+## ⚡ 2. Algorithmic Expense Evaluation Engine
 
-Immutable Audit Ledger: AWS DynamoDB (NoSQL) captures high-throughput transaction logs in real-time, completely decoupled from the relational database.
+### Cost-Optimized Compute
 
-✨ Key Technical Achievements
+Instead of invoking expensive LLMs (AWS Bedrock/OpenAI) for every transaction, SmartWallet uses a deterministic rule engine deployed on AWS Lambda.
 
+Benefits:
 
-Polyglot Persistence: Successfully separated database workloads. Relational data (users/auth) stays in PostgreSQL, while high-velocity, schema-less audit logs are streamed to DynamoDB.
+- Sub-100 ms execution
+- Zero inference cost
+- Predictable latency
+- Highly scalable
 
-Enterprise Cloud Security: Implemented strict IAM (Identity and Access Management) policies, adhering to the Principle of Least Privilege for Lambda-to-Bedrock/DynamoDB communications.
+### Decision Rules
 
-Graceful Error Handling & Resiliency: The application safely catches cloud-level errors (e.g., AWS ThrottlingException account quotas) and handles CORS API gateway restrictions without crashing the client UI.
+Automatically **APPROVES**
 
-CI/CD Pipeline: Integrated a continuous deployment pipeline via GitHub and Vercel for zero-downtime production updates.
+- Uber
+- Delta Airlines
+- Marriott Hotels
 
-🚀 How It Works
+when transaction amounts fall within approved limits.
 
-An authenticated user simulates a corporate card swipe via the Next.js dashboard.
+Automatically **DECLINES**
 
-An API request is securely routed to the AWS Lambda function.
+- Rolex
+- Gucci
+- Unknown merchants exceeding **$500**
 
-Lambda constructs a strict context window and queries AWS Bedrock to evaluate the merchant and amount against corporate policy.
+---
 
-The AI decision is instantly written to the DynamoDB NoSQL ledger.
+## ☁️ 3. Serverless Audit Ledger
 
-The frontend automatically fetches the updated ledger via a GET request to Lambda, reflecting the immutable log in real-time.
+### Database
 
-💻 Local Development
+Amazon DynamoDB
 
-Clone the repository
+**Region**
 
-Install dependencies: npm install
+```
 
-Configure environment variables in .env.local:
+ap-south-1 (Mumbai)
 
-NEXT_PUBLIC_SUPABASE_URL
+```
 
-NEXT_PUBLIC_SUPABASE_ANON_KEY
+### Schema
 
-NEXT_PUBLIC_AWS_LAMBDA_URL
+Partition Key
 
-Run the development server: npm run dev
+```
+
+transactionId
+
+````
+
+Features:
+
+- High-throughput writes
+- Low-latency reads
+- Serverless architecture
+- Real-time audit trail
+
+The frontend fetches and displays all enterprise transactions in a sortable audit ledger.
+
+---
+
+## 🚨 4. Dynamic Threat Analytics
+
+The frontend continuously monitors incoming transaction data.
+
+If any employee accumulates **2 or more declined transactions**, SmartWallet automatically flags them as a **High-Risk User**.
+
+Indicators include:
+
+- 🚨 Red threat banner
+- ⚠️ Warning icon beside user email
+- Real-time risk score updates
+
+---
+
+# 🛠 Technology Stack
+
+| Layer | Technology |
+|---------|------------|
+| Frontend | Next.js, React, Tailwind CSS |
+| Hosting | Vercel |
+| Backend | AWS Lambda (Node.js) |
+| Database | Amazon DynamoDB |
+| Authentication | Supabase Auth |
+
+---
+
+# 🏗 High-Level Design (HLD)
+
+```mermaid
+graph TD
+
+Client[Client Browser]
+
+subgraph Identity Provider
+Auth[Supabase Auth]
+end
+
+subgraph Frontend
+UI[Next.js App<br/>Hosted on Vercel]
+end
+
+subgraph AWS Cloud
+
+API[AWS Lambda URL]
+
+Logic[Rule Engine]
+
+DB[(Amazon DynamoDB<br/>SmartWalletLogs)]
+
+end
+
+Client -->|Authenticate| Auth
+
+Client -->|Dashboard| UI
+
+UI -->|POST Transaction| API
+
+UI -->|GET Ledger| API
+
+API --> Logic
+
+Logic --> DB
+
+DB --> API
+
+API --> UI
+````
+
+---
+
+# 🔄 Transaction Flow
+
+```text
+Employee
+
+↓
+
+Next.js Dashboard
+
+↓
+
+AWS Lambda
+
+↓
+
+Rule Engine
+
+↓
+
+APPROVED / DECLINED
+
+↓
+
+DynamoDB
+
+↓
+
+Audit Dashboard
+
+↓
+
+Threat Analytics
+```
+
+---
+
+# 📂 Project Structure
+
+```
+smartwallet-ai/
+
+│
+
+├── app/
+
+├── components/
+
+├── lib/
+
+├── public/
+
+├── styles/
+
+├── aws/
+
+├── lambda/
+
+├── README.md
+
+└── package.json
+```
+
+---
+
+# 💻 Local Setup
+
+## 1. Clone the Repository
+
+```bash
+git clone https://github.com/yourusername/smartwallet-ai.git
+
+cd smartwallet-ai
+```
+
+---
+
+## 2. Install Dependencies
+
+```bash
+npm install
+```
+
+---
+
+## 3. Configure Environment Variables
+
+Create a file named:
+
+```
+.env.local
+```
+
+Add the following variables:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+NEXT_PUBLIC_AWS_API_URL=your_lambda_function_url
+```
+
+---
+
+## 4. Run Development Server
+
+```bash
+npm run dev
+```
+
+Open:
+
+```
+http://localhost:3000
+```
+
+---
+
+# 🔒 Security Highlights
+
+* Zero-Trust architecture
+* Strict CORS policies
+* AWS IAM execution roles
+* Serverless backend
+* Secure Supabase authentication
+* No secrets exposed to the frontend
+* Stateless Lambda execution
+
+---
+
+# 💰 Cost Optimization
+
+Instead of evaluating every transaction using an LLM, SmartWallet employs a deterministic rule engine.
+
+Benefits include:
+
+* Nearly zero compute cost
+* Lower latency
+* Predictable performance
+* Easily extensible to Bedrock/OpenAI in future versions
+
+---
+
+# 🚀 Future Roadmap
+
+* Amazon Bedrock integration
+* AI-powered fraud detection
+* Receipt OCR
+* Manager approval workflows
+* Slack/MS Teams notifications
+* Budget tracking
+* Department-level analytics
+* Multi-tenant enterprise support
+
+---
+
+# 📄 License
+
+This project is licensed under the MIT License.
+
+```
+```
