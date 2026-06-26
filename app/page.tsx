@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../utils/supabase";
 
 // Define Admins on the frontend for UI rendering
-const ADMIN_EMAILS = ["prajjwalsinghvns19@gmail.com", "prajjwal_admin@gmail.com"];
+const ADMIN_EMAILS = ["prajwalsinghvns19@gmail.com", "prajjwal_admin@gmail.com"];
 
 export default function Home() {
   const [user, setUser] = useState<any>(null);
@@ -116,14 +116,14 @@ export default function Home() {
   // RBAC & UI Logic
   const isAdmin = user ? ADMIN_EMAILS.includes(user.email) : false;
   
-  // ROLLING TIME WINDOW: Only count strikes from the last 30 days
+  // ROLLING TIME WINDOW: Only count strikes from the last 1 days
   const getHighRiskUsers = () => {
     const strikes: Record<string, number> = {};
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).getTime();
+    const OneDaysAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).getTime();
 
     logs.forEach((log) => {
       const logTime = new Date(log.timestamp).getTime();
-      if (log.aiDecision?.startsWith("DECLINED") && logTime > thirtyDaysAgo) {
+      if (log.aiDecision?.startsWith("DECLINED") && logTime > OneDaysAgo) {
         strikes[log.email] = (strikes[log.email] || 0) + 1;
       }
     });
@@ -196,7 +196,7 @@ export default function Home() {
         {/* ASYMMETRIC THREAT UI: Admin Global View */}
         {isAdmin && highRiskUsers.length > 0 && (
           <div className="bg-red-950 border border-red-700 rounded-xl p-4 shadow-lg shadow-red-900/20">
-            <p className="text-red-400 font-bold">⚠️ Global Alert — {highRiskUsers.length} High-Risk User(s) Detected (Last 30 Days)</p>
+            <p className="text-red-400 font-bold">⚠️ Global Alert — {highRiskUsers.length} High-Risk User(s) Detected (Last 1 Day)</p>
             <p className="text-red-300 text-sm mt-1">{highRiskUsers.join(", ")} — 2+ policy violations</p>
           </div>
         )}
@@ -205,7 +205,7 @@ export default function Home() {
         {!isAdmin && isCurrentUserHighRisk && (
           <div className="bg-orange-950 border border-orange-700 rounded-xl p-4 shadow-lg shadow-orange-900/20">
             <p className="text-orange-400 font-bold">⚠️ Account Warning</p>
-            <p className="text-orange-300 text-sm mt-1">You have multiple declined transactions in the last 30 days. Please review the corporate expense policy below to avoid account suspension.</p>
+            <p className="text-orange-300 text-sm mt-1">You have multiple declined transactions in the last 1 day. Please review the corporate expense policy below to avoid account suspension.</p>
           </div>
         )}
 
