@@ -10,6 +10,10 @@ export default function Home() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [message, setMessage] = useState("");
+  
+  // Password Recovery States
+  const [newPassword, setNewPassword] = useState("");
+  const [isRecovery, setIsRecovery] = useState(false);
 
   const [merchant, setMerchant] = useState("");
   const [amount, setAmount] = useState("");
@@ -23,10 +27,17 @@ export default function Home() {
       setUser(session?.user || null);
       if (session?.user) fetchLogs();
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Catch the password reset link click
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecovery(true);
+      }
+      
       setUser(session?.user || null);
       if (session?.user) fetchLogs();
     });
+    
     return () => subscription.unsubscribe();
   }, []);
 
@@ -50,6 +61,17 @@ export default function Home() {
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) setMessage(`Error: ${error.message}`);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      alert(`Error: ${error.message}`);
+    } else {
+      alert("Password updated successfully!");
+      setIsRecovery(false); // Hide the prompt
+      setNewPassword("");
     }
   };
 
@@ -185,6 +207,28 @@ export default function Home() {
             <button onClick={handleLogout} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded font-bold text-sm">Sign Out</button>
           </div>
         </div>
+
+        {/* Password Recovery Prompt */}
+        {isRecovery && (
+          <div className="bg-blue-900 border border-blue-500 rounded-xl p-6 shadow-2xl flex flex-col items-center">
+            <h2 className="text-xl font-bold text-white mb-4">You requested a password reset</h2>
+            <div className="flex w-full max-w-md space-x-4">
+              <input 
+                type="password" 
+                placeholder="Enter new password" 
+                value={newPassword} 
+                onChange={(e) => setNewPassword(e.target.value)} 
+                className="flex-1 bg-slate-900 border border-slate-600 rounded p-3 text-white outline-none focus:border-blue-400"
+              />
+              <button 
+                onClick={handleUpdatePassword} 
+                className="px-6 py-3 bg-blue-500 hover:bg-blue-400 text-white font-bold rounded"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Threat Analytics Banner */}
         {highRiskUsers.length > 0 && (
