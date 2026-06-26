@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "../utils/supabase";
 
 // Define Admins on the frontend for UI rendering
@@ -20,11 +20,15 @@ export default function Home() {
   const [merchant, setMerchant] = useState("");
   const [amount, setAmount] = useState("");
   const [swipeStatus, setSwipeStatus] = useState("");
+  const [isScanning, setIsScanning] = useState(false); // NEW: AI Loading State
   
   const [logs, setLogs] = useState<any[]>([]);
   const [viewFilter, setViewFilter] = useState("ALL");
 
-  const AWS_API_URL = process.env.NEXT_PUBLIC_AWS_API_URL || "";
+  const fileInputRef = useRef<HTMLInputElement>(null); // NEW: Hidden file input ref
+
+  // Ensure no trailing slash for clean endpoint routing
+  const AWS_API_URL = (process.env.NEXT_PUBLIC_AWS_API_URL || "").replace(/\/$/, "");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -90,6 +94,58 @@ export default function Home() {
     }
   };
 
+  // 📸 NEW: Handle Receipt Upload & Vision AI Extraction
+  const handleScanReceipt = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !AWS_API_URL) return;
+
+    setIsScanning(true);
+    setSwipeStatus("📸 Initiating secure upload...");
+
+    try {
+      // 1. Get Presigned URL from Lambda
+      const urlRes = await fetch(`${AWS_API_URL}/get-upload-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, contentType: file.type }),
+      });
+      if (!urlRes.ok) throw new Error("Failed to get secure upload link.");
+      const { uploadUrl, fileKey } = await urlRes.json();
+
+      setSwipeStatus("☁️ Uploading to AWS S3...");
+
+      // 2. Upload file directly to S3 Bucket (Bypassing Lambda!)
+      const uploadRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!uploadRes.ok) throw new Error("S3 Upload Failed.");
+
+      setSwipeStatus("🧠 Vision AI is analyzing receipt...");
+
+      // 3. Trigger Vision AI extraction
+      const analyzeRes = await fetch(`${AWS_API_URL}/analyze-receipt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileKey }),
+      });
+      if (!analyzeRes.ok) throw new Error("Vision AI analysis failed.");
+      const extractedData = await analyzeRes.json();
+
+      // 4. Auto-fill the form
+      if (extractedData.merchant) setMerchant(extractedData.merchant);
+      if (extractedData.amount) setAmount(extractedData.amount.toString());
+
+      setSwipeStatus("✅ Receipt scanned successfully! Ready to swipe.");
+    } catch (err: any) {
+      setSwipeStatus(`Error: ${err.message}`);
+    } finally {
+      setIsScanning(false);
+      if (fileInputRef.current) fileInputRef.current.value = ""; // Reset file input
+    }
+  };
+
   const handleSwipe = async () => {
     if (!AWS_API_URL || !merchant || !amount) {
       setSwipeStatus("Enter merchant and amount first.");
@@ -97,7 +153,7 @@ export default function Home() {
     }
     setSwipeStatus("Processing...");
     try {
-      const res = await fetch(AWS_API_URL, {
+      const res = await fetch(`${AWS_API_URL}/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ merchant, amount: parseFloat(amount), email: user?.email }),
@@ -113,17 +169,15 @@ export default function Home() {
     }
   };
 
-  // RBAC & UI Logic
   const isAdmin = user ? ADMIN_EMAILS.includes(user.email) : false;
   
-  // ROLLING TIME WINDOW: Only count strikes from the last 1 days
   const getHighRiskUsers = () => {
     const strikes: Record<string, number> = {};
-    const OneDaysAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).getTime();
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).getTime();
 
     logs.forEach((log) => {
       const logTime = new Date(log.timestamp).getTime();
-      if (log.aiDecision?.startsWith("DECLINED") && logTime > OneDaysAgo) {
+      if (log.aiDecision?.startsWith("DECLINED") && logTime > oneDayAgo) {
         strikes[log.email] = (strikes[log.email] || 0) + 1;
       }
     });
@@ -193,34 +247,68 @@ export default function Home() {
           </div>
         )}
 
-        {/* ASYMMETRIC THREAT UI: Admin Global View */}
+        {/* ASYMMETRIC THREAT UI */}
         {isAdmin && highRiskUsers.length > 0 && (
           <div className="bg-red-950 border border-red-700 rounded-xl p-4 shadow-lg shadow-red-900/20">
-            <p className="text-red-400 font-bold">⚠️ Global Alert — {highRiskUsers.length} High-Risk User(s) Detected (Last 1 Day)</p>
+            <p className="text-red-400 font-bold">⚠️ Global Alert — {highRiskUsers.length} High-Risk User(s) Detected (Last 24 Hours)</p>
             <p className="text-red-300 text-sm mt-1">{highRiskUsers.join(", ")} — 2+ policy violations</p>
           </div>
         )}
 
-        {/* ASYMMETRIC THREAT UI: Employee Personal Warning */}
         {!isAdmin && isCurrentUserHighRisk && (
           <div className="bg-orange-950 border border-orange-700 rounded-xl p-4 shadow-lg shadow-orange-900/20">
             <p className="text-orange-400 font-bold">⚠️ Account Warning</p>
-            <p className="text-orange-300 text-sm mt-1">You have multiple declined transactions in the last 1 day. Please review the corporate expense policy below to avoid account suspension.</p>
+            <p className="text-orange-300 text-sm mt-1">You have multiple declined transactions in the last 24 hours. Please review the corporate expense policy below to avoid account suspension.</p>
           </div>
         )}
 
-        {/* Swipe Card */}
+        {/* Swipe Card & Receipt Scanner */}
         <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
-          <h2 className="text-xl font-bold mb-4 text-white">Test Corporate Card</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold text-white">Test Corporate Card</h2>
+            
+            {/* Hidden File Input & Visible Button */}
+            <input 
+              type="file" 
+              accept="image/*" 
+              ref={fileInputRef} 
+              onChange={handleScanReceipt} 
+              className="hidden" 
+            />
+            <button 
+              onClick={() => fileInputRef.current?.click()} 
+              disabled={isScanning}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 rounded font-bold text-sm text-white transition-colors flex items-center space-x-2"
+            >
+              {isScanning ? (
+                <span>⏳ Processing AI...</span>
+              ) : (
+                <span>📸 Scan Receipt (AI)</span>
+              )}
+            </button>
+          </div>
+
           <div className="flex space-x-4 mb-4">
             <input type="text" placeholder="Merchant Name" value={merchant} onChange={(e) => setMerchant(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded p-3 text-white outline-none focus:border-blue-500" />
             <input type="number" placeholder="Amount ($)" value={amount} onChange={(e) => setAmount(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded p-3 text-white outline-none focus:border-blue-500" />
           </div>
-          <button onClick={handleSwipe} className="w-full py-4 bg-blue-600 hover:bg-blue-700 rounded font-bold text-white text-lg transition-colors">Swipe Card</button>
           
-          {swipeStatus && <p className={`mt-4 text-center font-bold ${swipeStatus.startsWith("Error") || swipeStatus.includes("DECLINED") ? "text-red-400" : "text-emerald-400"}`}>{swipeStatus}</p>}
+          <button onClick={handleSwipe} disabled={isScanning} className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded font-bold text-white text-lg transition-colors">
+            Swipe Card
+          </button>
+          
+          {swipeStatus && (
+            <p className={`mt-4 text-center font-bold ${
+              swipeStatus.includes("Error") || swipeStatus.includes("DECLINED") 
+                ? "text-red-400" 
+                : swipeStatus.includes("☁️") || swipeStatus.includes("🧠") || swipeStatus.includes("📸")
+                ? "text-blue-400"
+                : "text-emerald-400"
+            }`}>
+              {swipeStatus}
+            </p>
+          )}
 
-          {/* Corporate Policy Disclaimer */}
           <div className="mt-6 p-4 bg-slate-900/50 rounded border border-slate-700 text-sm text-slate-400">
              <span className="font-bold text-slate-300">Corporate Policy:</span> Auto-approval limit is $500.00. Luxury vendors (<span className="text-red-400 font-medium">Gucci, Rolex, Porsche, Louis Vuitton, Ritz</span>) are strictly prohibited and will result in an immediate strike.
           </div>
