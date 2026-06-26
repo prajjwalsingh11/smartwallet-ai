@@ -83,7 +83,7 @@ export default function Home() {
       if (!res.ok) throw new Error("Network Error: Failed to fetch from AWS");
 
       const data = await res.json();
-      setSwipeStatus(`Success! Result: ${data.decision}`);
+      setSwipeStatus(`Success! Result: ${data.aiDecision}`);
       fetchLogs();
       setMerchant("");
       setAmount("");
