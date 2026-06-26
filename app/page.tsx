@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../utils/supabase";
 
 // Define Admins on the frontend for UI rendering
-const ADMIN_EMAILS = ["prajwalsinghvns19@gmail.com", "prajjwal_admin@gmail.com"];
+const ADMIN_EMAILS = ["prajjwalsinghvns19@gmail.com", "prajjwal_admin@gmail.com"];
 
 export default function Home() {
   const [user, setUser] = useState<any>(null);
@@ -22,26 +22,20 @@ export default function Home() {
   const [swipeStatus, setSwipeStatus] = useState("");
   
   const [logs, setLogs] = useState<any[]>([]);
-  const [viewFilter, setViewFilter] = useState("ALL"); // For Admin Dropdown
+  const [viewFilter, setViewFilter] = useState("ALL");
 
   const AWS_API_URL = process.env.NEXT_PUBLIC_AWS_API_URL || "";
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user || null);
-      // FIX: Ensure session, user, and email all exist before fetching
-      if (session?.user?.email) {
-        fetchLogs(session.user.email);
-      }
+      if (session?.user?.email) fetchLogs(session.user.email);
     });
     
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') setIsRecovery(true);
       setUser(session?.user || null);
-      // FIX: Apply the exact same check here
-      if (session?.user?.email) {
-        fetchLogs(session.user.email);
-      }
+      if (session?.user?.email) fetchLogs(session.user.email);
     });
     
     return () => subscription.unsubscribe();
@@ -84,7 +78,6 @@ export default function Home() {
     setViewFilter("ALL");
   };
 
-  // 🔒 Pass email to backend for Tenant Isolation
   const fetchLogs = async (currentUserEmail: string) => {
     if (!AWS_API_URL) return;
     try {
@@ -123,17 +116,23 @@ export default function Home() {
   // RBAC & UI Logic
   const isAdmin = user ? ADMIN_EMAILS.includes(user.email) : false;
   
+  // ROLLING TIME WINDOW: Only count strikes from the last 30 days
   const getHighRiskUsers = () => {
     const strikes: Record<string, number> = {};
+    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).getTime();
+
     logs.forEach((log) => {
-      if (log.aiDecision?.startsWith("DECLINED")) strikes[log.email] = (strikes[log.email] || 0) + 1;
+      const logTime = new Date(log.timestamp).getTime();
+      if (log.aiDecision?.startsWith("DECLINED") && logTime > oneDayAgo) {
+        strikes[log.email] = (strikes[log.email] || 0) + 1;
+      }
     });
     return Object.entries(strikes).filter(([, count]) => count >= 2).map(([email]) => email);
   };
   
   const highRiskUsers = getHighRiskUsers();
+  const isCurrentUserHighRisk = user ? highRiskUsers.includes(user.email) : false;
   
-  // Admin Filter Logic
   const uniqueEmails = Array.from(new Set(logs.map((log) => log.email)));
   const displayedLogs = isAdmin && viewFilter !== "ALL" 
     ? logs.filter((log) => log.email === viewFilter) 
@@ -172,7 +171,7 @@ export default function Home() {
     <div className="min-h-screen bg-slate-900 text-slate-200 p-8">
       <div className="max-w-4xl mx-auto space-y-8">
 
-        {/* Header with Role Badge */}
+        {/* Header */}
         <div className="flex justify-between items-center border-b border-slate-700 pb-4">
           <h1 className="text-3xl font-bold text-blue-400">SmartWallet MVP</h1>
           <div className="flex items-center space-x-4">
@@ -194,35 +193,50 @@ export default function Home() {
           </div>
         )}
 
-        {/* Threat Analytics (ONLY VISIBLE TO ADMINS) */}
+        {/* ASYMMETRIC THREAT UI: Admin Global View */}
         {isAdmin && highRiskUsers.length > 0 && (
-          <div className="bg-red-950 border border-red-700 rounded-xl p-4">
-            <p className="text-red-400 font-bold">⚠️ Threat Analytics — {highRiskUsers.length} High-Risk User(s) Detected</p>
-            <p className="text-red-300 text-sm mt-1">{highRiskUsers.join(", ")} — 2+ policy violations flagged</p>
+          <div className="bg-red-950 border border-red-700 rounded-xl p-4 shadow-lg shadow-red-900/20">
+            <p className="text-red-400 font-bold">⚠️ Global Alert — {highRiskUsers.length} High-Risk User(s) Detected (Last 30 Days)</p>
+            <p className="text-red-300 text-sm mt-1">{highRiskUsers.join(", ")} — 2+ policy violations</p>
           </div>
         )}
 
-        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
+        {/* ASYMMETRIC THREAT UI: Employee Personal Warning */}
+        {!isAdmin && isCurrentUserHighRisk && (
+          <div className="bg-orange-950 border border-orange-700 rounded-xl p-4 shadow-lg shadow-orange-900/20">
+            <p className="text-orange-400 font-bold">⚠️ Account Warning</p>
+            <p className="text-orange-300 text-sm mt-1">You have multiple declined transactions in the last 30 days. Please review the corporate expense policy below to avoid account suspension.</p>
+          </div>
+        )}
+
+        {/* Swipe Card */}
+        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
           <h2 className="text-xl font-bold mb-4 text-white">Test Corporate Card</h2>
           <div className="flex space-x-4 mb-4">
             <input type="text" placeholder="Merchant Name" value={merchant} onChange={(e) => setMerchant(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded p-3 text-white outline-none focus:border-blue-500" />
             <input type="number" placeholder="Amount ($)" value={amount} onChange={(e) => setAmount(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded p-3 text-white outline-none focus:border-blue-500" />
           </div>
-          <button onClick={handleSwipe} className="w-full py-4 bg-blue-600 hover:bg-blue-700 rounded font-bold text-white text-lg">Swipe Card</button>
-          {swipeStatus && <p className={`mt-4 text-center font-bold ${swipeStatus.startsWith("Error") ? "text-red-400" : "text-emerald-400"}`}>{swipeStatus}</p>}
+          <button onClick={handleSwipe} className="w-full py-4 bg-blue-600 hover:bg-blue-700 rounded font-bold text-white text-lg transition-colors">Swipe Card</button>
+          
+          {swipeStatus && <p className={`mt-4 text-center font-bold ${swipeStatus.startsWith("Error") || swipeStatus.includes("DECLINED") ? "text-red-400" : "text-emerald-400"}`}>{swipeStatus}</p>}
+
+          {/* Corporate Policy Disclaimer */}
+          <div className="mt-6 p-4 bg-slate-900/50 rounded border border-slate-700 text-sm text-slate-400">
+             <span className="font-bold text-slate-300">Corporate Policy:</span> Auto-approval limit is $500.00. Luxury vendors (<span className="text-red-400 font-medium">Gucci, Rolex, Porsche, Louis Vuitton, Ritz</span>) are strictly prohibited and will result in an immediate strike.
+          </div>
         </div>
 
-        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
+        {/* Audit Ledger */}
+        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold text-white">{isAdmin ? "Global Audit Ledger" : "Personal Ledger"}</h2>
             
             <div className="flex items-center space-x-4">
-              {/* Dropdown ONLY VISIBLE TO ADMINS */}
               {isAdmin && uniqueEmails.length > 0 && (
                 <select 
                   value={viewFilter} 
                   onChange={(e) => setViewFilter(e.target.value)} 
-                  className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded p-2 outline-none focus:border-blue-500"
+                  className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded p-2 outline-none focus:border-blue-500 cursor-pointer"
                 >
                   <option value="ALL">All Employees</option>
                   {uniqueEmails.map(email => (
@@ -230,43 +244,45 @@ export default function Home() {
                   ))}
                 </select>
               )}
-              <button onClick={() => fetchLogs(user.email)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded font-bold text-sm">↻ Refresh</button>
+              <button onClick={() => fetchLogs(user.email)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded font-bold text-sm transition-colors">↻ Refresh</button>
             </div>
           </div>
           
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-900 text-slate-400">
-              <tr>
-                <th className="p-4">Timestamp</th>
-                <th className="p-4">Email</th>
-                <th className="p-4">Merchant</th>
-                <th className="p-4">Amount</th>
-                <th className="p-4">AI Decision</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayedLogs.length === 0 ? (
-                <tr><td colSpan={5} className="p-4 text-center text-slate-500">No logs found.</td></tr>
-              ) : (
-                displayedLogs.map((log: any) => {
-                  const isHighRisk = isAdmin && highRiskUsers.includes(log.email);
-                  const approved = log.aiDecision?.startsWith("APPROVED");
-                  return (
-                    <tr key={log.transactionId || log.id} className="border-b border-slate-700/50 hover:bg-slate-700/20">
-                      <td className="p-4 text-slate-400 text-xs">{new Date(log.timestamp).toLocaleString()}</td>
-                      <td className={`p-4 font-medium ${isHighRisk ? "text-red-400" : "text-blue-300"}`}>
-                        {isHighRisk && <span className="mr-1">⚠️</span>}
-                        {log.email}
-                      </td>
-                      <td className="p-4 text-white">{log.merchant}</td>
-                      <td className="p-4 text-slate-300">${parseFloat(log.amount).toFixed(2)}</td>
-                      <td className={`p-4 font-bold ${approved ? "text-emerald-400" : "text-red-400"}`}>{log.aiDecision}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="bg-slate-900 text-slate-400">
+                <tr>
+                  <th className="p-4 rounded-tl">Timestamp</th>
+                  <th className="p-4">Email</th>
+                  <th className="p-4">Merchant</th>
+                  <th className="p-4">Amount</th>
+                  <th className="p-4 rounded-tr">AI Decision</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayedLogs.length === 0 ? (
+                  <tr><td colSpan={5} className="p-4 text-center text-slate-500">No logs found.</td></tr>
+                ) : (
+                  displayedLogs.map((log: any) => {
+                    const isHighRisk = isAdmin && highRiskUsers.includes(log.email);
+                    const approved = log.aiDecision?.startsWith("APPROVED");
+                    return (
+                      <tr key={log.transactionId || log.id} className="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors">
+                        <td className="p-4 text-slate-400 text-xs">{new Date(log.timestamp).toLocaleString()}</td>
+                        <td className={`p-4 font-medium ${isHighRisk ? "text-red-400" : "text-blue-300"}`}>
+                          {isHighRisk && <span className="mr-1">⚠️</span>}
+                          {log.email}
+                        </td>
+                        <td className="p-4 text-white font-medium">{log.merchant}</td>
+                        <td className="p-4 text-slate-300">${parseFloat(log.amount).toFixed(2)}</td>
+                        <td className={`p-4 font-bold ${approved ? "text-emerald-400" : "text-red-400"}`}>{log.aiDecision}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
       </div>
