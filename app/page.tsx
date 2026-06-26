@@ -57,10 +57,11 @@ export default function Home() {
   const fetchLogs = async () => {
     try {
       const res = await fetch(AWS_API_URL);
-      if (!res.ok) throw new Error("Failed to fetch");
+      if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
       const data = await res.json();
       setLogs(data);
     } catch (err: any) {
+      console.error(err);
       setMessage(`Network Error: ${err.message}`);
     }
   };
@@ -78,7 +79,7 @@ export default function Home() {
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to process transaction");
+      if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
       
       const data = await res.json();
       setSwipeStatus(`Success! Result: ${data.decision}`);
@@ -90,8 +91,6 @@ export default function Home() {
     }
   };
 
-  const isAdmin = user?.email?.includes("admin");
-
   if (!user) {
     return (
       <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-8">
@@ -101,7 +100,7 @@ export default function Home() {
           <form onSubmit={handleAuth} className="space-y-4">
             <input
               type="email"
-              placeholder="Corporate Email"
+              placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full p-3 rounded bg-slate-900 border border-slate-600 focus:border-blue-500 outline-none"
@@ -130,66 +129,65 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 p-8">
-      <div className="max-w-6xl mx-auto space-y-8">
-        <h1 className="text-4xl font-bold text-center text-blue-400 mb-12">SmartWallet AI Dashboard</h1>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl flex flex-col items-center">
-            <h2 className="text-xl font-bold mb-4 text-white">Identity Provider</h2>
-            <div className="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mb-4">👤</div>
-            <p className="text-emerald-400 font-bold">Authenticated User</p>
-            <p className="text-slate-300 mb-2">{user.email}</p>
-            <span className={`px-3 py-1 rounded-full text-xs font-bold mb-6 ${isAdmin ? 'bg-purple-900 text-purple-300' : 'bg-blue-900 text-blue-300'}`}>
-              Role: {isAdmin ? 'ADMIN' : 'EMPLOYEE'}
-            </span>
-            <button onClick={handleLogout} className="w-full py-2 bg-slate-700 hover:bg-slate-600 rounded font-bold transition">Sign Out</button>
-          </div>
-
-          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
-             <h2 className="text-xl font-bold mb-4 text-center text-white">AI Logic Engine</h2>
-             <div className="flex space-x-4 mb-4">
-                <div className="flex-1">
-                  <label className="text-xs text-slate-400">Merchant Name</label>
-                  <input type="text" value={merchant} onChange={(e)=>setMerchant(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded p-2 mt-1" />
-                </div>
-                <div className="flex-1">
-                  <label className="text-xs text-slate-400">Amount ($)</label>
-                  <input type="number" value={amount} onChange={(e)=>setAmount(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded p-2 mt-1" />
-                </div>
-             </div>
-             <button onClick={handleSwipe} className="w-full py-3 bg-orange-600 hover:bg-orange-700 rounded font-bold text-white shadow-lg">Swipe Corporate Card</button>
-             {swipeStatus && <p className="mt-4 text-center text-sm font-mono text-emerald-400">{swipeStatus}</p>}
+      <div className="max-w-4xl mx-auto space-y-8">
+        
+        {/* Header Section */}
+        <div className="flex justify-between items-center mb-8 border-b border-slate-700 pb-4">
+          <h1 className="text-3xl font-bold text-blue-400">SmartWallet MVP</h1>
+          <div className="flex items-center space-x-4">
+            <span className="text-sm text-slate-400">{user.email}</span>
+            <button onClick={handleLogout} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded font-bold text-sm transition">Sign Out</button>
           </div>
         </div>
 
+        {/* Action Panel - Just the Swipe Form */}
+        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
+           <h2 className="text-xl font-bold mb-4 text-white">Test Corporate Card</h2>
+           <div className="flex space-x-4 mb-4">
+              <div className="flex-1">
+                <label className="text-xs text-slate-400">Merchant Name</label>
+                <input type="text" value={merchant} onChange={(e)=>setMerchant(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded p-3 mt-1" />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-slate-400">Amount ($)</label>
+                <input type="number" value={amount} onChange={(e)=>setAmount(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded p-3 mt-1" />
+              </div>
+           </div>
+           <button onClick={handleSwipe} className="w-full py-4 bg-orange-600 hover:bg-orange-700 rounded font-bold text-white shadow-lg text-lg">
+             Swipe Card
+           </button>
+           {swipeStatus && <p className="mt-4 text-center text-sm font-mono text-emerald-400">{swipeStatus}</p>}
+        </div>
+
+        {/* Simple Ledger */}
         <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-white">Audit Ledger</h2>
-            <button onClick={fetchLogs} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded font-bold text-sm">↻ Refresh</button>
+            <h2 className="text-xl font-bold text-white">Raw Audit Database</h2>
+            <button onClick={fetchLogs} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded font-bold text-sm">↻ Refresh DB</button>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-900 text-slate-400 font-bold">
                 <tr>
-                  <th className="p-4 rounded-tl-lg">Timestamp</th>
-                  <th className="p-4">Employee</th>
+                  <th className="p-4 rounded-tl-lg">Date</th>
+                  <th className="p-4">Email</th>
                   <th className="p-4">Merchant</th>
                   <th className="p-4">Amount</th>
-                  <th className="p-4 rounded-tr-lg">AI Decision</th>
+                  <th className="p-4 rounded-tr-lg">AI Log</th>
                 </tr>
               </thead>
               <tbody>
                 {logs.length === 0 ? (
-                  <tr><td colSpan={5} className="p-4 text-center text-slate-500">No transactions found.</td></tr>
+                  <tr><td colSpan={5} className="p-4 text-center text-slate-500">No logs found in DynamoDB.</td></tr>
                 ) : (
                   logs.map((log: any) => (
                     <tr key={log.id} className="border-b border-slate-700/50 hover:bg-slate-700/20">
                       <td className="p-4 text-slate-400 font-mono text-xs">{new Date(log.timestamp).toLocaleString()}</td>
-                      <td className="p-4 text-blue-300 font-medium">{log.email}</td>
+                      <td className="p-4 text-blue-300">{log.email}</td>
                       <td className="p-4 text-white">{log.merchant}</td>
                       <td className="p-4 text-slate-300">${parseFloat(log.amount).toFixed(2)}</td>
-                      <td className="p-4 font-bold text-emerald-400">{log.aiDecision}</td>
+                      <td className="p-4 font-mono text-xs text-emerald-400">{log.aiDecision}</td>
                     </tr>
                   ))
                 )}
