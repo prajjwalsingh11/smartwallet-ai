@@ -8,9 +8,9 @@ const bedrockClient = new BedrockRuntimeClient({ region: "us-east-1" });
 const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region: "ap-south-1" }));
 const s3Client = new S3Client({ region: "ap-south-1" });
 
-const TABLE_NAME = "SmartWalletLogs";                                             // DynamoDB table for logging
-const BUCKET_NAME = "smartwallet-receipts-prajjwal";                              // S3 bucket for storing receipts
-const ADMIN_EMAILS = ["prajwalsinghvns19@gmail.com", "prajjwal_admin@gmail.com"]; // List of admin emails for ledger access
+const TABLE_NAME = "SmartWalletLogs";
+const BUCKET_NAME = "smartwallet-receipts-prajjwal";
+const ADMIN_EMAILS = ["prajwalsinghvns19@gmail.com", "prajjwal_admin@gmail.com"];
 
 const fallbackAlgorithm = (merchant, amount) => {
     const amt = parseFloat(amount);
@@ -20,14 +20,6 @@ const fallbackAlgorithm = (merchant, amount) => {
     if (amt > 500) return "DECLINED - (Fallback) Auto-limit exceeded.";
     return "APPROVED - (Fallback) Standard expense approved.";
 };
-
-const streamToString = (stream) =>
-    new Promise((resolve, reject) => {
-        const chunks = [];
-        stream.on("data", (chunk) => chunks.push(chunk));
-        stream.on("error", reject);
-        stream.on("end", () => resolve(Buffer.concat(chunks).toString("base64")));
-    });
 
 const sendDiscordAlert = async (email, merchant, amount, decision, strikeCount) => {
     if (!process.env.DISCORD_WEBHOOK_URL) return;
@@ -75,33 +67,43 @@ export const handler = async (event) => {
                 return { statusCode: 200, headers, body: JSON.stringify({ uploadUrl, fileKey: uniqueKey }) };
             }
 
-            // 👁️ ACTION 2: ANALYZE RECEIPT WITH VISION AI
+            // 👁️ ACTION 2: ANALYZE RECEIPT WITH GEMINI VISION AI
             if (body.fileKey) {
                 const getCommand = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: body.fileKey });
-                const response = await s3Client.send(getCommand);
-                const base64Image = await streamToString(response.Body);
+                const s3Response = await s3Client.send(getCommand);
 
-                const prompt = `You are a corporate expense auditor. Extract the Merchant Name and Total Amount from this receipt. Reply ONLY in valid JSON format: {"merchant": "string", "amount": number}. Do not include markdown formatting.`;
+                const chunks = [];
+                for await (const chunk of s3Response.Body) chunks.push(chunk);
+                const base64Image = Buffer.concat(chunks).toString("base64");
 
-                const aiResponse = await bedrockClient.send(new InvokeModelCommand({
-                    modelId: "us.amazon.nova-pro-v1:0",
-                    contentType: "application/json",
-                    accept: "application/json",
-                    body: JSON.stringify({
-                        messages: [{ 
-                            role: "user",
-                            content: [
-                                { image: { format: "png", source: { bytes: base64Image } } },
-                                { text: prompt }
-                            ]
-                        }],
-                        inferenceConfig: { temperature: 0.1, maxTokens: 200 }
-                    })
-                }));
+                const ext = body.fileKey.split('.').pop().toLowerCase();
+                const mimeType = ext === "png" ? "image/png" : (ext === "jpg" || ext === "jpeg") ? "image/jpeg" : "image/png";
 
-                const parsed = JSON.parse(new TextDecoder().decode(aiResponse.body));
-                let contentText = parsed.output.message.content[0].text.trim();
+                const geminiRes = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [
+                                    { inline_data: { mime_type: mimeType, data: base64Image } },
+                                    { text: `You are a corporate expense auditor analyzing a receipt photo. Rules: 1) If multiple receipts are visible, focus ONLY on the most prominent/front receipt. 2) Extract the MERCHANT NAME from the top of the receipt (store brand name like "DMart" or "Office Depot", not branch address or company legal name like "Avenue Supermarts Ltd"). 3) Extract the FINAL TOTAL AMOUNT actually paid - this is the last/largest total at the bottom (for Indian receipts look for the subtotal before GST breakup table, for US receipts look for TOTAL AMOUNT or AMOUNT DUE). Never pick subtotals, individual item prices, or GST component values. 4) If you cannot confidently read a value, make your best guess from context. Reply ONLY in valid JSON with no markdown, no explanation, nothing else: {"merchant": "string", "amount": number}` }
+                                ]
+                            }]
+                        })
+                    }
+                );
+
+                const geminiData = await geminiRes.json();
+
+                if (!geminiData.candidates || !geminiData.candidates[0]) {
+                    throw new Error("Gemini Vision returned no result");
+                }
+
+                let contentText = geminiData.candidates[0].content.parts[0].text.trim();
                 contentText = contentText.replace(/```json/g, "").replace(/```/g, "").trim();
+
                 return { statusCode: 200, headers, body: contentText };
             }
 
@@ -143,7 +145,7 @@ export const handler = async (event) => {
 
             await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: item }));
 
-            // 🚨 Discord Alert — fire if DECLINED and user has 2+ strikes
+            // 🚨 Discord Alert
             if (decision.startsWith("DECLINED")) {
                 try {
                     const scanResult = await docClient.send(new ScanCommand({
