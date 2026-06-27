@@ -58,7 +58,7 @@ export default function Home() {
 
     if (isSignUp) {
       const { error } = await supabase.auth.signUp({ email, password });
-      if (error) setMessage(`Error: ${error.message}`);
+      if (error) setMessage(`Error: ${error.message || error.code || JSON.stringify(error)}`);
       else setMessage("Success! You can log in now.");
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
