@@ -104,7 +104,7 @@ export default function Home() {
 
     try {
       // 1. Get Presigned URL from Lambda
-      const urlRes = await fetch(`${AWS_API_URL}/get-upload-url`, {
+      const urlRes = await fetch(AWS_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: file.name, contentType: file.type }),
@@ -125,7 +125,7 @@ export default function Home() {
       setSwipeStatus("🧠 Vision AI is analyzing receipt...");
 
       // 3. Trigger Vision AI extraction
-      const analyzeRes = await fetch(`${AWS_API_URL}/analyze-receipt`, {
+      const analyzeRes = await fetch(AWS_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileKey }),
@@ -153,7 +153,7 @@ export default function Home() {
     }
     setSwipeStatus("Processing...");
     try {
-      const res = await fetch(`${AWS_API_URL}/`, {
+      const res = await fetch(AWS_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ merchant, amount: parseFloat(amount), email: user?.email }),
